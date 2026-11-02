@@ -1,0 +1,92 @@
+@font-face {
+  font-family: 'Satoshi';
+  src: url('assets/fonts/satoshi-500.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Satoshi';
+  src: url('assets/fonts/satoshi-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+  --paper: #f2f2f7;
+  --surface: #ffffff;
+  --cloud: #ececf1;
+  --line: #e2e2e7;
+  --ink: #1c1c1e;
+  --muted: #66666d;
+  --green-ink: #176d30;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #000000;
+    --surface: #111113;
+    --cloud: #19191c;
+    --line: #222226;
+    --ink: #f2f2f3;
+    --muted: #86868e;
+    --green-ink: #30d158;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font:
+    500 14px/1.45 'Satoshi',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+.page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 32px 24px 112px;
+}
+.page h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.page p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.tabs {
+  position: fixed;
+  inset: auto 0 0;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.tabs button {
+  flex: 1;
+  max-width: 160px;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tabs button[aria-current='page'] {
+  color: var(--green-ink);
+}
