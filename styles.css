@@ -102,11 +102,11 @@ body {
 .muted {
   color: var(--muted);
 }
-.note {
+.page .note {
   margin-top: 16px;
   font-size: 13px;
 }
-.note:empty {
+.page .note:empty {
   margin: 0;
 }
 
