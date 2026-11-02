@@ -5,6 +5,7 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 const { createServer } = require('./serve.js');
 const AXE = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
+const SERVER = 'https://raspberrypi.tail9d7f95.ts.net';
 
 let server, browser, baseURL;
 
@@ -19,18 +20,179 @@ after(async () => {
   server?.close();
 });
 
-async function open(colorScheme = 'light') {
+// The Volumora server as the app sees it: every call is noted, so a test can say what must never happen.
+async function open({ colorScheme = 'light', storage = {}, claude = 200 } = {}) {
   const context = await browser.newContext({ locale: 'de-DE', colorScheme });
+  await context.addInitScript((entries) => {
+    if (sessionStorage.getItem('seeded')) return;
+    sessionStorage.setItem('seeded', '1');
+    Object.entries(entries).forEach(([key, value]) => localStorage.setItem(key, JSON.stringify(value)));
+  }, storage);
+  const calls = [];
+  await context.route(`${SERVER}/**`, async (route) => {
+    const request = route.request();
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    const path = new URL(request.url()).pathname;
+    calls.push({
+      method: request.method(),
+      path,
+      auth: request.headers().authorization,
+      body: request.postData(),
+    });
+    const reply = (status, value) => route.fulfill({ status, headers: cors, json: value });
+    if (path === '/v1/login') {
+      const { username, password } = JSON.parse(request.postData());
+      return username === 'fouad' && password === 'richtiges-passwort'
+        ? reply(200, { token: 'fouad.neu' })
+        : reply(401, { error: 'user' });
+    }
+    if (path === '/v1/logout') return reply(200, { ok: true });
+    if (request.headers().authorization === 'Bearer abgelaufen.x') return reply(401, { error: 'session' });
+    if (path === '/v1/me')
+      return reply(200, {
+        username: 'fouad',
+        ai: { available: true, budget: 5, used: 0.12, month: '2026-11' },
+      });
+    if (path === '/v1/ai/messages')
+      return claude === 200
+        ? reply(200, { stop_reason: 'end_turn', content: [{ type: 'text', text: 'OK' }] })
+        : reply(claude, { error: 'budget' });
+    return reply(404, { error: 'not found' });
+  });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
   await page.goto(baseURL);
-  return { context, page, errors };
+  return { context, page, errors, calls };
 }
 
-test('starts on Heute and switches between the four tabs without errors', async () => {
-  const { context, page, errors } = await open();
+const signedIn = { 'prepora-session': { url: SERVER, username: 'fouad', token: 'fouad.alt' } };
+
+async function signIn(page, username = 'fouad', password = 'richtiges-passwort') {
+  await page.fill('#username', username);
+  await page.fill('#password', password);
+  await page.click('#signInButton');
+}
+
+test('asks for the Volumora account first and opens the app with the right password', async () => {
+  const { context, page, errors, calls } = await open();
+  assert.equal(await page.locator('h1').innerText(), 'Prepora');
+  assert.equal(await page.locator('#username').getAttribute('autocomplete'), 'username');
+  assert.equal(await page.locator('#password').getAttribute('autocomplete'), 'current-password');
+
+  await signIn(page);
+  await page.waitForSelector('[data-tab="today"]');
+  assert.equal(await page.locator('h1').innerText(), 'Heute');
+  assert.equal(calls[0].path, '/v1/login');
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-session')));
+  assert.equal(stored.token, 'fouad.neu');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('a wrong password says so and stays on the sign-in', async () => {
+  const { context, page } = await open();
+  await signIn(page, 'fouad', 'falsch');
+  await page.waitForSelector('#signInError:not([hidden])');
+  assert.match(await page.locator('#signInError').innerText(), /stimmt nicht/);
+  assert.equal(await page.evaluate(() => localStorage.getItem('prepora-session')), null);
+  await context.close();
+});
+
+test('takes over a sign-in from Volumora in the same browser and leaves it valid on sign-out', async () => {
+  const volumora = { url: SERVER, username: 'fouad', token: 'fouad.volumora', version: '1' };
+  const { context, page, calls } = await open({ storage: { 'volumora-sync': volumora } });
+  await page.waitForSelector('[data-tab="today"]');
+  await page.click('[data-tab="more"]');
+  assert.equal(await page.locator('#accountName').innerText(), 'fouad');
+
+  await page.click('#signOut');
+  await page.waitForSelector('#signIn');
+  assert.equal(
+    calls.some((call) => call.path === '/v1/logout'),
+    false
+  );
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('volumora-sync'))), volumora);
+
+  await page.reload();
+  await page.waitForSelector('#signIn');
+  await context.close();
+});
+
+test('ignores a Volumora sign-in the server has already refused', async () => {
+  const { context, page } = await open({
+    storage: { 'volumora-sync': { url: SERVER, username: 'fouad', token: 'fouad.alt', problem: 'session' } },
+  });
+  await page.waitForSelector('#signIn');
+  await context.close();
+});
+
+test('a sign-in the server no longer knows leads back to the sign-in', async () => {
+  const { context, page } = await open({
+    storage: { 'prepora-session': { url: SERVER, username: 'fouad', token: 'abgelaufen.x' } },
+  });
+  await page.waitForSelector('#signIn');
+  assert.equal(await page.evaluate(() => localStorage.getItem('prepora-session')), null);
+  await context.close();
+});
+
+test('its own sign-out ends the session on the server', async () => {
+  const { context, page, calls } = await open({ storage: signedIn });
+  await page.click('[data-tab="more"]');
+  await page.click('#signOut');
+  await page.waitForSelector('#signIn');
+  assert.ok(calls.some((call) => call.path === '/v1/logout' && call.auth === 'Bearer fouad.alt'));
+  await context.close();
+});
+
+test('Claude goes through the server with the sign-in, no key is involved', async () => {
+  const { context, page, calls } = await open({ storage: signedIn });
+  await page.click('[data-tab="more"]');
+  await page.waitForFunction(() =>
+    document.getElementById('aiLine')?.textContent.includes('0,12 $ von 5,00 $')
+  );
+  await page.click('#testClaude');
+  await page.waitForFunction(() =>
+    document.getElementById('testResult').textContent.includes('Claude antwortet')
+  );
+
+  const call = calls.find((entry) => entry.path === '/v1/ai/messages');
+  assert.equal(call.auth, 'Bearer fouad.alt');
+  assert.equal(JSON.parse(call.body).model, 'claude-opus-5-5');
+  const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }));
+  assert.doesNotMatch(stored, /sk-ant/);
+  await context.close();
+});
+
+test('an empty budget is named instead of failing silently', async () => {
+  const { context, page } = await open({ storage: signedIn, claude: 402 });
+  await page.click('[data-tab="more"]');
+  await page.click('#testClaude');
+  await page.waitForFunction(() =>
+    document.getElementById('testResult').textContent.includes('aufgebraucht')
+  );
+  await context.close();
+});
+
+test('never touches the Volumora data on the server', async () => {
+  const { context, page, calls } = await open({ storage: signedIn });
+  for (const tab of ['plan', 'shop', 'more', 'today']) await page.click(`[data-tab="${tab}"]`);
+  await page.waitForTimeout(100);
+  assert.equal(
+    calls.some((call) => call.path.includes('snapshot')),
+    false
+  );
+  const code = fs.readdirSync('src').map((file) => fs.readFileSync(`src/${file}`, 'utf8'));
+  assert.equal(
+    code.some((text) => /['"`]\/v1\/snapshot/.test(text)),
+    false
+  );
+  await context.close();
+});
+
+test('switches between the four tabs without errors', async () => {
+  const { context, page, errors } = await open({ storage: signedIn });
   assert.equal(await page.locator('h1').innerText(), 'Heute');
   for (const [tab, title] of [
     ['plan', 'Wochenplan'],
@@ -52,22 +214,29 @@ test('the service worker only ever touches caches with its own prefix', () => {
   assert.match(worker, /k\.startsWith\(PREFIX\) && k !== CACHE/);
 });
 
-test('every precached file exists', () => {
+test('every precached file exists and every module is precached', () => {
   const worker = fs.readFileSync('sw.js', 'utf8');
   const files = [...worker.matchAll(/'\.\/([^']+)'/g)].map((match) => match[1]);
   assert.ok(files.length > 5);
   for (const file of files) assert.ok(fs.existsSync(file), file);
+  for (const file of fs.readdirSync('src')) assert.ok(files.includes(`src/${file}`), file);
 });
 
-for (const scheme of ['light', 'dark']) {
-  test(`no serious accessibility violations in ${scheme} mode`, async () => {
-    const { context, page } = await open(scheme);
-    await page.addScriptTag({ content: AXE });
-    const violations = await page.evaluate(async () => {
-      const result = await window.axe.run();
-      return result.violations.filter((v) => ['serious', 'critical'].includes(v.impact)).map((v) => v.id);
-    });
-    assert.deepEqual(violations, []);
-    await context.close();
+for (const colorScheme of ['light', 'dark']) {
+  test(`no serious accessibility violations in ${colorScheme} mode`, async () => {
+    const check = async (page) => {
+      await page.addScriptTag({ content: AXE });
+      return page.evaluate(async () => {
+        const result = await window.axe.run();
+        return result.violations.filter((v) => ['serious', 'critical'].includes(v.impact)).map((v) => v.id);
+      });
+    };
+    const gate = await open({ colorScheme });
+    assert.deepEqual(await check(gate.page), []);
+    await gate.context.close();
+    const more = await open({ colorScheme, storage: signedIn });
+    await more.page.click('[data-tab="more"]');
+    assert.deepEqual(await check(more.page), []);
+    await more.context.close();
   });
 }

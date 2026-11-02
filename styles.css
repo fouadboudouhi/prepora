@@ -19,7 +19,10 @@
   --line: #e2e2e7;
   --ink: #1c1c1e;
   --muted: #66666d;
-  --green-ink: #176d30;
+  --accent: #ff9f0a;
+  --on-accent: #1a1206;
+  --accent-ink: #a84b00;
+  --danger: #d70015;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -29,7 +32,8 @@
     --line: #222226;
     --ink: #f2f2f3;
     --muted: #86868e;
-    --green-ink: #30d158;
+    --accent-ink: #ff9f0a;
+    --danger: #ff6961;
   }
 }
 
@@ -88,5 +92,101 @@ body {
   cursor: pointer;
 }
 .tabs button[aria-current='page'] {
-  color: var(--green-ink);
+  color: var(--accent-ink);
+}
+
+.page a {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+.muted {
+  color: var(--muted);
+}
+.note {
+  margin-top: 16px;
+  font-size: 13px;
+}
+.note:empty {
+  margin: 0;
+}
+
+.list {
+  margin-top: 20px;
+  background: var(--surface);
+  border-radius: 20px;
+  overflow: hidden;
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 50px;
+  padding: 10px 16px;
+  font-weight: 700;
+}
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+.row .muted {
+  font-weight: 500;
+  text-align: right;
+}
+
+.gate form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 24px;
+}
+.gate label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.gate input {
+  height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+}
+.gate input:focus {
+  outline: 2px solid var(--accent);
+}
+.page .error {
+  color: var(--danger);
+}
+
+.primary,
+.secondary {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 22px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.secondary {
+  margin-top: 12px;
+  background: var(--cloud);
+  color: var(--ink);
+}
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.6;
 }
