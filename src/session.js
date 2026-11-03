@@ -116,5 +116,5 @@ export async function refreshMe() {
   }
 }
 
-export const aiCall = (body, headers) =>
-  call('/v1/ai/messages', { method: 'POST', body: JSON.stringify(body), headers });
+export const aiCall = (body, headers, signal) =>
+  call('/v1/ai/messages', { method: 'POST', body: JSON.stringify(body), headers, signal });

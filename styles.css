@@ -80,9 +80,9 @@ body {
   inset: auto 16px max(12px, calc(env(safe-area-inset-bottom) - 8px));
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 2px;
-  max-width: 440px;
+  max-width: 460px;
   margin: 0 auto;
   padding: 5px;
   border-radius: 32px;
@@ -1178,4 +1178,179 @@ label.row:active {
 .guide h3 {
   margin: 14px 0 0;
   font-size: 15px;
+}
+
+/* The chat with Claude: its answers on the page, the person's own lines in soft orange on the right */
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+.bubble {
+  max-width: 100%;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.bubble p,
+.page .bubble p {
+  margin: 0;
+  color: var(--ink);
+}
+.page .bubble p + p,
+.page .bubble p + ul,
+.page .bubble ul + p {
+  margin-top: 10px;
+}
+.bubble ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.bubble li + li {
+  margin-top: 4px;
+}
+.bubble.mine {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 20px 20px 6px 20px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 14px;
+}
+.chat-change .glyph {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--accent-ink);
+}
+.chat-change span:first-of-type {
+  flex: 1;
+}
+.chat-change .text-button {
+  min-height: 32px;
+}
+.chat-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 14px;
+}
+.dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: blink 1.2s ease-in-out infinite;
+}
+.dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dots i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+.starters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.starter {
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+.starter:active {
+  background: var(--cloud);
+}
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 24px;
+  background: var(--surface);
+}
+.composer:focus-within {
+  outline: 2px solid var(--accent);
+}
+.composer textarea {
+  flex: 1;
+  min-height: 36px;
+  max-height: 160px;
+  padding: 7px 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  caret-color: var(--accent);
+  resize: none;
+  field-sizing: content;
+}
+.composer textarea:focus {
+  outline: 0;
+}
+.composer textarea::placeholder {
+  color: var(--muted);
+}
+.send {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+.send .glyph {
+  width: 20px;
+  height: 20px;
+}
+.new-chat {
+  display: block;
+  margin: 12px auto 0;
 }

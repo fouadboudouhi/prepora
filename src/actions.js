@@ -111,8 +111,11 @@ async function runPlanning(work, replacing = null) {
   rerender();
 }
 
-// The first freezer portions go in without asking: they use up what is there and save a recipe.
-export function newWeek() {
+const wishLine = (wish) => (wish ? `Wunsch der Person für diesen Plan: ${wish}` : undefined);
+
+// The first freezer portions go in without asking: they use up what is there and save a recipe. A wish comes from the
+// chat, in the person's words.
+export function newWeek(wish = '') {
   return runPlanning(() => {
     const profile = getProfile();
     const start = nextStart(profile.cookWeekday ?? 0);
@@ -135,12 +138,13 @@ export function newWeek() {
       stock: stock.filter((item) => placed.used.includes(item.id)),
       start,
       slots: placed.slots,
+      correction: wishLine(wish),
     });
   });
 }
 
 // The rest of the plan is meant to stay, so Claude gets it along and only changes this one dish.
-export function replaceRecipe(recipeId) {
+export function replaceRecipe(recipeId, wish = '') {
   const plan = getPlan();
   const recipe = plan?.recipes.find((entry) => entry.id === recipeId);
   if (!recipe) return Promise.resolve();
@@ -164,7 +168,12 @@ export function replaceRecipe(recipeId) {
           .map((meal) => ({ slot: meal.id, recipeId: meal.recipeId })),
         cookDays,
       },
-      correction: `Ersetze nur das Gericht "${recipe.name}" durch ein anderes und passe den Kochablauf dazu an. Alles andere bleibt.`,
+      correction: [
+        `Ersetze nur das Gericht "${recipe.name}" durch ein anderes und passe den Kochablauf dazu an. Alles andere bleibt.`,
+        wishLine(wish),
+      ]
+        .filter(Boolean)
+        .join('\n'),
     });
   }, recipeId);
 }

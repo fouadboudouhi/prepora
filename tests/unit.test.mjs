@@ -1,6 +1,7 @@
 // The daily targets, without a browser. Run with `npm test`.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { kept } from '../src/agent.js';
 import { calendarText } from '../src/calendar.js';
 import { assessDish } from '../src/dish.js';
 import { adviceRequest, validAdvice } from '../src/goalAdvice.js';
@@ -683,4 +684,20 @@ test('the calendar file blocks each time every week', () => {
   assert.ok(text.includes('DURATION:PT90M'));
   assert.ok(text.includes('\r\n'));
   assert.equal(calendarText({ cookDays: 1 }).match(/BEGIN:VEVENT/g).length, 2);
+});
+
+test('after a fallback mid-answer only the earlier text goes back, with all that follows', () => {
+  const content = [
+    { type: 'thinking', thinking: 'a', signature: 's' },
+    { type: 'text', text: 'Moment' },
+    { type: 'tool_use', id: 'x', name: 'get_overview', input: {} },
+    { type: 'fallback', from: { model: 'a' }, to: { model: 'b' } },
+    { type: 'text', text: ', gleich.' },
+    { type: 'tool_use', id: 'y', name: 'get_overview', input: {} },
+  ];
+  assert.deepEqual(
+    kept(content).map((block) => block.id ?? block.text),
+    ['Moment', ', gleich.', 'y']
+  );
+  assert.equal(kept(content.slice(0, 3)).length, 3);
 });

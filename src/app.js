@@ -1,5 +1,6 @@
 // The shell: sign-in with the Volumora account, four tabs, and the full-screen cook day above them.
 import { applyTrend, getStock, updateBlocks } from './actions.js';
+import { chatActions, chatView, keepDraft, send, showLatest } from './chatView.js';
 import { askHelper, cookActions, cookView, cooking, startTicking } from './cookView.js';
 import { planActions, planView, readFridgePhoto } from './planView.js';
 import { photoActions, photoView, readDishPhoto, recheckDish } from './photoView.js';
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'today', label: 'Heute', title: 'Heute', view: todayView },
   { id: 'plan', label: 'Plan', title: 'Wochenplan', view: planView },
   { id: 'shop', label: 'Einkauf', title: 'Einkauf', view: shopView },
+  { id: 'chat', label: 'Claude', title: 'Claude', view: chatView },
   { id: 'more', label: 'Mehr', title: 'Mehr', view: moreView },
 ];
 // Screens that open from a tab and keep it lit. They bring their own title and way back.
@@ -43,6 +45,7 @@ const ACTIONS = {
   ...photoActions,
   ...supplementActions,
   ...recipeActions,
+  ...chatActions,
 };
 
 // The rows under Mehr; each hint is worked out when the screen is drawn.
@@ -159,6 +162,7 @@ function open(id) {
   current = id;
   draw();
   window.scrollTo(0, 0);
+  if (id === 'chat') showLatest();
 }
 
 function showGate() {
@@ -254,6 +258,11 @@ const FORMS = {
     document.activeElement?.blur?.();
     recheckDish(name);
   },
+  chatForm(form) {
+    const text = form.elements.message.value;
+    form.elements.message.blur();
+    send(text);
+  },
   cookHelper(form) {
     const question = form.elements.question.value;
     form.elements.question.blur();
@@ -309,7 +318,19 @@ app.addEventListener('change', (event) => {
     if (event.target.name === 'cookDays') redrawKeepingPlace();
   }
 });
-app.addEventListener('input', saveProfileChange);
+app.addEventListener('input', (event) => {
+  saveProfileChange(event);
+  if (event.target.closest?.('#chatForm')) keepDraft(event.target.value);
+});
+
+// Return sends, Shift and Return makes a new line.
+app.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+  const form = event.target.closest?.('#chatForm');
+  if (!form) return;
+  event.preventDefault();
+  form.requestSubmit();
+});
 
 start();
 

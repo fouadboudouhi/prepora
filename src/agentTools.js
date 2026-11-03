@@ -1,0 +1,448 @@
+// What the assistant may look at and do. Each tool calls what the screens use too, so the same rules hold: plans come
+// from the planner with its checks, numbers from nutrition.js. The note about medicines stays with the supplements.
+import {
+  eat,
+  getFridge,
+  getMyRecipes,
+  getPlan,
+  getStock,
+  getSupplements,
+  getTaste,
+  newWeek,
+  planning,
+  repeatBestWeek,
+  replaceRecipe,
+  saveFridge,
+  saveStock,
+  saveTaste,
+  skip,
+  updateBlocks,
+} from './actions.js';
+import { ACTIVITY, GOALS, dailyTargets } from './nutrition.js';
+import { DEVICES, DIETS, MEALS, getProfile, saveProfile } from './profile.js';
+import { localDay, mealName, recipeOf, shoppingList } from './planner.js';
+import { read, write } from './store.js';
+import { errorText } from './ui.js';
+
+const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+const TIME = '^([01]\\d|2[0-3]):[0-5]\\d$';
+const weekday = {
+  type: 'integer',
+  minimum: 0,
+  maximum: 6,
+  description: '0 = Sonntag, 1 = Montag … 6 = Samstag',
+};
+const wish = {
+  type: 'string',
+  description: 'Optional: Wunsch der Person in einem Satz, z. B. "mehr Hähnchen, nichts Scharfes".',
+};
+
+// The fields of the profile the assistant may set, with the same choices the profile screen offers.
+const PROFILE_FIELDS = {
+  goal: { type: 'string', enum: Object.keys(GOALS) },
+  activity: { type: 'string', enum: Object.keys(ACTIVITY) },
+  sex: { type: 'string', enum: ['male', 'female', ''] },
+  age: { type: 'integer', minimum: 18, maximum: 100 },
+  height: { type: 'integer', minimum: 120, maximum: 230 },
+  weight: { type: 'number', minimum: 35, maximum: 250 },
+  cookDays: { type: 'integer', enum: [1, 2] },
+  cookWeekday: weekday,
+  cookTime: { type: 'string', pattern: TIME },
+  cookWeekday2: weekday,
+  cookTime2: { type: 'string', pattern: TIME },
+  shopWeekday: weekday,
+  shopTime: { type: 'string', pattern: TIME },
+  cookMinutes: { type: 'integer', enum: [60, 90, 120] },
+  eatDays: { type: 'integer', enum: [5, 7] },
+  people: { type: 'integer', minimum: 1, maximum: 4 },
+  meals: { type: 'array', items: { type: 'string', enum: MEALS } },
+  freezer: { type: 'boolean' },
+  devices: { type: 'array', items: { type: 'string', enum: DEVICES } },
+  diet: { type: 'array', items: { type: 'string', enum: DIETS } },
+  avoid: { type: 'string', maxLength: 300 },
+  boxes: { type: ['integer', 'null'], minimum: 0, maximum: 100 },
+  budget: { type: ['integer', 'null'], minimum: 0, maximum: 1000 },
+};
+const TASTE_FIELDS = ['likes', 'dislikes', 'loved', 'never'];
+const tasteList = { type: 'array', items: { type: 'string', maxLength: 80 }, maxItems: 20 };
+
+export const TOOLS = [
+  {
+    name: 'get_overview',
+    description:
+      'Alles Wichtige auf einmal: heutiges Datum, Profil, Tagesziel, aktueller Wochenplan mit allen Mahlzeiten (id, Datum, Gericht, recipeId, gegessen, Bewertung), Tiefkühler, Kühlschrank, Geschmack, eigene Rezepte und Supplements. Rufe das zuerst auf, bevor du etwas über Plan oder Profil sagst.',
+    input_schema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
+    name: 'get_recipe',
+    description:
+      'Ein Rezept aus dem aktuellen Plan: Zutaten mit Mengen in Gramm für alle Portionen, Kochtag, Haltbarkeit, Aufwärmen und Nährwerte pro Portion.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['recipeId'],
+      properties: { recipeId: { type: 'string' } },
+    },
+  },
+  {
+    name: 'get_cook_day',
+    description: 'Der Kochablauf der Woche: pro Kochtag Datum, Minuten und die Schritte in Reihenfolge.',
+    input_schema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
+    name: 'get_shopping_list',
+    description: 'Die Einkaufsliste der aktuellen Woche nach Bereichen, mit dem, was schon im Wagen ist.',
+    input_schema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
+    name: 'create_plan',
+    description:
+      'Erstellt einen neuen Wochenplan ab dem nächsten Kochtag, mit Rezepten, Kochablauf und Einkaufsliste. Der bisherige Plan kommt in den Verlauf. Dauert ein bis zwei Minuten und kostet etwas Budget. Profil und Geschmack fließen von selbst ein; ändere sie vorher, wenn die Person das will.',
+    input_schema: { type: 'object', additionalProperties: false, properties: { wish } },
+  },
+  {
+    name: 'replace_dish',
+    description:
+      'Tauscht ein Gericht im aktuellen Plan gegen ein anderes, der Rest bleibt. Das alte Gericht kommt auf "Nie wieder".',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['recipeId'],
+      properties: { recipeId: { type: 'string' }, wish },
+    },
+  },
+  {
+    name: 'repeat_best_week',
+    description:
+      'Wiederholt die bisher am besten bewertete Woche ab dem nächsten Kochtag. Kostenlos, ohne Claude.',
+    input_schema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
+    name: 'update_profile',
+    description:
+      'Ändert Angaben im Profil. Nur die Felder angeben, die sich ändern. goal: muscle Muskelaufbau, lose Abnehmen, cut Definition, keep Gewicht halten, endurance Ausdauer. activity: low Wenig, medium Mittel, high Viel.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['changes'],
+      properties: {
+        changes: {
+          type: 'object',
+          additionalProperties: false,
+          properties: PROFILE_FIELDS,
+          minProperties: 1,
+        },
+      },
+    },
+  },
+  {
+    name: 'update_taste',
+    description:
+      'Merkt sich Geschmack für die nächsten Pläne. likes: mag die Person, dislikes: lieber nicht, loved: Gericht gerne wieder, never: Gericht nie wieder. add fügt hinzu, remove entfernt.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        add: {
+          type: 'object',
+          additionalProperties: false,
+          properties: Object.fromEntries(TASTE_FIELDS.map((f) => [f, tasteList])),
+        },
+        remove: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  },
+  {
+    name: 'set_fridge',
+    description:
+      'Ersetzt die Liste, was noch im Kühlschrank ist. Der nächste Plan verbraucht es. Leere Liste löscht sie.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['items'],
+      properties: { items: { type: 'array', items: { type: 'string', maxLength: 80 }, maxItems: 30 } },
+    },
+  },
+  {
+    name: 'update_freezer',
+    description:
+      'Ändert die Portionen eines Gerichts im Tiefkühler. portions ist die neue Zahl, 0 nimmt es heraus.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['name', 'portions'],
+      properties: {
+        name: { type: 'string', maxLength: 80 },
+        portions: { type: 'integer', minimum: 0, maximum: 50 },
+      },
+    },
+  },
+  {
+    name: 'mark_meal',
+    description:
+      'eaten: als gegessen abhaken. skip: heute nicht essen, die App friert es ein oder schiebt es, je nachdem was sicher ist.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['mealId', 'action'],
+      properties: { mealId: { type: 'string' }, action: { type: 'string', enum: ['eaten', 'skip'] } },
+    },
+  },
+];
+
+export const TOOL_STATUS = {
+  get_overview: 'Schaut in deine Daten …',
+  get_recipe: 'Liest das Rezept …',
+  get_cook_day: 'Schaut in den Kochablauf …',
+  get_shopping_list: 'Schaut in die Einkaufsliste …',
+  create_plan: 'Erstellt den Wochenplan, das dauert ein bis zwei Minuten …',
+  replace_dish: 'Tauscht das Gericht …',
+  repeat_best_week: 'Wiederholt die beste Woche …',
+  update_profile: 'Ändert das Profil …',
+  update_taste: 'Merkt sich das …',
+  set_fridge: 'Trägt den Kühlschrank ein …',
+  update_freezer: 'Ändert den Tiefkühler …',
+  mark_meal: 'Hakt die Mahlzeit ab …',
+};
+
+const without = ({ health, goalText, weights, adjustNote, ...rest }) => rest;
+
+// The schema is only a guide for Claude, so the code checks every value itself before it is saved.
+function fits(rule, value) {
+  if (value === null) return [rule.type].flat().includes('null');
+  if (rule.enum) return rule.enum.includes(value);
+  const types = [rule.type].flat();
+  if (types.includes('array')) return Array.isArray(value) && value.every((entry) => fits(rule.items, entry));
+  if (types.includes('boolean')) return typeof value === 'boolean';
+  if (types.includes('string'))
+    return (
+      typeof value === 'string' &&
+      value.length <= (rule.maxLength ?? 300) &&
+      (!rule.pattern || new RegExp(rule.pattern).test(value))
+    );
+  const whole = types.includes('integer') && !types.includes('number');
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    (!whole || Number.isInteger(value)) &&
+    value >= (rule.minimum ?? -Infinity) &&
+    value <= (rule.maximum ?? Infinity)
+  );
+}
+
+function planSummary(plan) {
+  if (!plan) return null;
+  return {
+    start: plan.start,
+    cookDays: (plan.cookDays ?? []).map((day) => day.date ?? day),
+    shopOn: plan.shopOn ?? null,
+    estimatedCostEuro: plan.cost ?? null,
+    recipes: plan.recipes.map((recipe) => ({
+      id: recipe.id,
+      name: recipe.name,
+      perPortion: recipe.nutrition,
+    })),
+    meals: plan.meals.map((meal) => ({
+      id: meal.id,
+      date: `${meal.date} (${WEEKDAYS[new Date(`${meal.date}T12:00:00`).getDay()]})`,
+      meal: meal.meal,
+      dish: mealName(plan, meal),
+      ...(meal.recipeId ? { recipeId: meal.recipeId } : {}),
+      ...(meal.storage ? { storage: meal.storage } : {}),
+      ...(meal.eaten ? { eaten: meal.eaten } : {}),
+      ...(meal.skipped ? { skipped: true } : {}),
+      ...(meal.rating ? { rating: meal.rating } : {}),
+    })),
+  };
+}
+
+function overview() {
+  const profile = getProfile();
+  const today = localDay();
+  return {
+    today: `${today} (${WEEKDAYS[new Date(`${today}T12:00:00`).getDay()]})`,
+    profile: without(profile),
+    dailyTarget: dailyTargets(profile),
+    planning: planning.busy ? 'Ein Plan wird gerade erstellt.' : null,
+    plan: planSummary(getPlan()),
+    freezer: getStock().map(({ name, portions, frozenAt }) => ({ name, portions, frozenAt })),
+    fridge: getFridge(),
+    taste: getTaste(),
+    ownRecipes: getMyRecipes().map(({ name, wanted }) => ({ name, ...(wanted ? { nextPlan: true } : {}) })),
+    supplements: (getSupplements().mine ?? []).map(({ name, dose }) => ({ name, dose })),
+  };
+}
+
+// The plan screen shows the same error the tool reports.
+async function plan(work) {
+  if (planning.busy) return { error: 'Es wird schon ein Plan erstellt. Warte, bis er fertig ist.' };
+  await work();
+  if (planning.error) return { error: errorText(planning.error) };
+  return { done: true, plan: planSummary(getPlan()) };
+}
+
+function updateProfile({ changes }) {
+  const before = getProfile();
+  const next = { ...before };
+  for (const [key, value] of Object.entries(changes ?? {})) {
+    if (!(key in PROFILE_FIELDS)) return { error: `Unbekanntes Feld: ${key}` };
+    if (!fits(PROFILE_FIELDS[key], value))
+      return { error: `Ungültiger Wert für ${key}: ${JSON.stringify(value)}` };
+    next[key] = typeof value === 'string' ? value.trim() : value;
+  }
+  if (changes.activity) next.activityFrom = '';
+  if (changes.weight !== undefined && changes.weight !== before.weight) {
+    next.weightAt = Date.now();
+    next.weightFrom = '';
+  }
+  saveProfile(next);
+  updateBlocks();
+  return { done: true, dailyTarget: dailyTargets(next) };
+}
+
+function updateTaste({ add = {}, remove = [] }) {
+  const lists = [remove, ...Object.values(add)];
+  if (!lists.every((list) => Array.isArray(list) && list.every((value) => typeof value === 'string')))
+    return { error: 'add und remove brauchen Listen aus Text.' };
+  const taste = getTaste();
+  const gone = new Set(remove.map((value) => value.toLowerCase()));
+  for (const field of TASTE_FIELDS) {
+    const list = (taste[field] ?? []).filter((value) => !gone.has(value.toLowerCase()));
+    taste[field] = [...new Set([...list, ...(add[field] ?? [])])];
+  }
+  saveTaste(taste);
+  return { done: true, taste };
+}
+
+function updateFreezer({ name, portions }) {
+  if (
+    typeof name !== 'string' ||
+    !name.trim() ||
+    !Number.isInteger(portions) ||
+    portions < 0 ||
+    portions > 50
+  )
+    return { error: 'name braucht Text und portions eine ganze Zahl von 0 bis 50.' };
+  const stock = getStock();
+  const found = stock.find((item) => item.name.toLowerCase() === name.trim().toLowerCase());
+  if (found) found.portions = portions;
+  else if (portions)
+    stock.push({ id: `s-${Date.now()}`, name: name.trim(), portions, frozenAt: localDay(), nutrition: null });
+  saveStock(stock.filter((item) => item.portions > 0));
+  return { done: true };
+}
+
+function markMeal({ mealId, action }) {
+  const meal = getPlan()?.meals.find((entry) => entry.id === mealId);
+  if (!meal) return { error: 'Diese Mahlzeit gibt es im aktuellen Plan nicht.' };
+  if (action === 'eaten') {
+    eat(mealId);
+    return { done: true };
+  }
+  return { done: true, outcome: skip(mealId) };
+}
+
+export async function runTool(name, input = {}) {
+  switch (name) {
+    case 'get_overview':
+      return overview();
+    case 'get_recipe': {
+      const recipe = recipeOf(getPlan(), input.recipeId);
+      if (!recipe) return { error: 'Dieses Rezept gibt es im aktuellen Plan nicht.' };
+      const { name: title, cookDate, fridgeDays, freezes, reheat, twists, nutrition, portions } = recipe;
+      return {
+        name: title,
+        cookDate,
+        portions,
+        fridgeDays,
+        freezes,
+        reheat,
+        twists,
+        perPortion: nutrition,
+        ingredients: recipe.ingredients.map(({ name: item, grams }) => ({ name: item, grams })),
+      };
+    }
+    case 'get_cook_day': {
+      const current = getPlan();
+      if (!current) return { error: 'Es gibt noch keinen Plan.' };
+      return { cookDays: current.cookDays };
+    }
+    case 'get_shopping_list': {
+      const current = getPlan();
+      if (!current) return { error: 'Es gibt noch keinen Plan.' };
+      const checked = read('shop', {});
+      return {
+        shopOn: current.shopOn ?? null,
+        groups: shoppingList(current, getSupplements().mine ?? []).map((group) => ({
+          name: group.name,
+          items: group.items.map((item) => ({
+            name: item.name,
+            detail: item.detail,
+            inCart: !!checked[item.id],
+          })),
+        })),
+      };
+    }
+    case 'create_plan':
+      return plan(() => newWeek(input.wish ?? ''));
+    case 'replace_dish':
+      if (!recipeOf(getPlan(), input.recipeId))
+        return { error: 'Dieses Rezept gibt es im aktuellen Plan nicht.' };
+      return plan(() => replaceRecipe(input.recipeId, input.wish ?? ''));
+    case 'repeat_best_week': {
+      const before = getPlan()?.id;
+      repeatBestWeek();
+      return getPlan()?.id === before
+        ? { error: 'Es gibt noch keine Woche zum Wiederholen.' }
+        : { done: true, plan: planSummary(getPlan()) };
+    }
+    case 'update_profile':
+      return updateProfile(input);
+    case 'update_taste':
+      return updateTaste(input);
+    case 'set_fridge':
+      if (!Array.isArray(input.items) || !input.items.every((item) => typeof item === 'string'))
+        return { error: 'items braucht eine Liste aus Text.' };
+      saveFridge(
+        input.items
+          .map((item) => item.trim().slice(0, 80))
+          .filter(Boolean)
+          .slice(0, 30)
+      );
+      return { done: true };
+    case 'update_freezer':
+      return updateFreezer(input);
+    case 'mark_meal':
+      return markMeal(input);
+    default:
+      return { error: `Unbekanntes Werkzeug: ${name}` };
+  }
+}
+
+// What a turn changed, so one tap can take it back. Kept while the app is open.
+export const KEYS = ['profile', 'plan', 'history', 'shop', 'stock', 'taste', 'fridge'];
+export const snapshot = () => Object.fromEntries(KEYS.map((key) => [key, JSON.stringify(read(key, null))]));
+
+const NAMES = {
+  profile: 'Profil',
+  plan: 'Wochenplan',
+  taste: 'Geschmack',
+  fridge: 'Kühlschrank',
+  stock: 'Tiefkühler',
+};
+export function changesBetween(before, after) {
+  const changed = KEYS.filter((key) => before[key] !== after[key]);
+  return { changed, label: [...new Set(changed.map((key) => NAMES[key]).filter(Boolean))].join(', ') };
+}
+
+export function undo(before, after, changed, restorePlan) {
+  const now = snapshot();
+  if (changed.some((key) => now[key] !== after[key])) return false;
+  for (const key of changed) {
+    const value = JSON.parse(before[key]);
+    if (key === 'plan') restorePlan(value);
+    else write(key, value);
+  }
+  updateBlocks();
+  return true;
+}
