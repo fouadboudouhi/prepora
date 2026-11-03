@@ -27,6 +27,7 @@ const FAKE_FOOD = (name, food, grams, category, packGrams) => ({
   grams,
   category,
   packGrams,
+  packEuro: 2,
   per100: { kcal: 0, protein: 0, fat: 0, carbs: 0 },
 });
 // Answers like Claude does, in as many portions as the request lists.
@@ -47,6 +48,7 @@ function fakePlan(request) {
         fridgeDays: 4,
         freezes: true,
         reheat: '3 Minuten Mikrowelle',
+        twists: ['Mit Limette'],
         ingredients: [
           FAKE_FOOD('Rinderhack', 'rinderhack_mager', 1400, 'Fleisch und Fisch', 500),
           FAKE_FOOD('Kidneybohnen', 'kidneybohnen_dose', 1500, 'Vorrat', 400),
@@ -68,6 +70,18 @@ function fakePlan(request) {
       },
     ],
     assignments,
+    fillers: [
+      {
+        id: 'skyr',
+        name: 'Skyr mit Haferflocken',
+        when: 'Frühstück',
+        servings: 7,
+        ingredients: [
+          FAKE_FOOD('Skyr', 'skyr', 1750, 'Kühlregal', 500),
+          FAKE_FOOD('Salz', 'gewuerze', 0, 'Vorrat', 0),
+        ],
+      },
+    ],
     cookDays: [
       {
         date: start,
@@ -151,12 +165,89 @@ async function open({
       if (claude !== 200) return reply(claude, { error: 'budget' });
       const asked = JSON.parse(request.postData());
       const isPlan = asked.output_config?.format?.schema?.required?.includes('assignments');
-      const isPhoto = asked.output_config?.format?.schema?.required?.includes('items');
+      const required = asked.output_config?.format?.schema?.required ?? [];
+      const isPhoto = required.includes('items');
+      const said = JSON.stringify(asked.messages);
       const text = isPlan
         ? JSON.stringify(fakePlan(asked))
         : isPhoto
           ? JSON.stringify({ items: ['Paprika', 'Quark'] })
-          : 'Nimm Petersilie.';
+          : required.includes('kcalLow')
+            ? JSON.stringify(
+                said.includes('Lasagne')
+                  ? {
+                      isFood: true,
+                      dish: 'Lasagne',
+                      confidence: 'mittel',
+                      reason: '',
+                      portion: 'Normale Portion',
+                      kcalLow: 600,
+                      kcalHigh: 800,
+                      protein: 30,
+                      components: ['Nudeln', 'Hack', 'Käse'],
+                    }
+                  : {
+                      isFood: true,
+                      dish: 'Auflauf',
+                      confidence: 'niedrig',
+                      reason: 'Die Menge ist nicht zu sehen.',
+                      portion: '',
+                      kcalLow: 200,
+                      kcalHigh: 900,
+                      protein: 10,
+                      components: [],
+                    }
+              )
+            : required.includes('recommended')
+              ? JSON.stringify({
+                  recommended: [
+                    {
+                      name: 'Kreatin',
+                      dose: '3 g',
+                      when: 'Täglich',
+                      why: 'Hilft beim Muskelaufbau.',
+                      evidence: 'stark',
+                      caution: '',
+                    },
+                    {
+                      name: 'Vitamin D',
+                      dose: '1000 IE',
+                      when: 'Im Winter',
+                      why: 'Wenig Sonne.',
+                      evidence: 'mittel',
+                      caution: 'Vorher Bluttest.',
+                    },
+                  ],
+                  notNeeded: [{ name: 'BCAA', why: 'Dein Eiweiß reicht.' }],
+                  note: 'Du brauchst wenig.',
+                })
+              : required.includes('found')
+                ? JSON.stringify(
+                    said.includes('kein Rezept')
+                      ? {
+                          found: false,
+                          name: '',
+                          servings: 0,
+                          fridgeDays: 0,
+                          freezes: false,
+                          reheat: '',
+                          ingredients: [],
+                          steps: [],
+                        }
+                      : {
+                          found: true,
+                          name: 'Omas Gulasch',
+                          servings: 4,
+                          fridgeDays: 4,
+                          freezes: true,
+                          reheat: '3 Minuten',
+                          ingredients: [
+                            FAKE_FOOD('Rindfleisch', 'rindfleisch', 800, 'Fleisch und Fisch', 500),
+                          ],
+                          steps: ['Schmoren'],
+                        }
+                  )
+                : 'Nimm Petersilie.';
       return route.fulfill({
         status: 200,
         headers: { ...cors, 'content-type': 'text/event-stream' },
@@ -652,6 +743,12 @@ for (const colorScheme of ['light', 'dark']) {
     await more.page.click('[data-tab="more"]');
     await more.page.click('#openTaste');
     assert.deepEqual(await check(more.page), []);
+    await more.page.click('.back');
+    await more.page.click('#openSupplements');
+    assert.deepEqual(await check(more.page), []);
+    await more.page.click('.back');
+    await more.page.click('#openRecipes');
+    assert.deepEqual(await check(more.page), []);
     await more.context.close();
 
     const week = await open({ colorScheme, storage: ready });
@@ -674,5 +771,176 @@ test('a sign-out leaves nothing of this person on the device', async () => {
   await page.click('#signOut');
   await page.waitForSelector('#signIn');
   assert.equal(await page.evaluate(() => localStorage.getItem('prepora-profile')), null);
+  await context.close();
+});
+
+test('"Heute nicht" decides by itself what happens to the box', async () => {
+  const today = await (async () => {
+    const at = new Date();
+    return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+  })();
+  const recipe = {
+    id: 'a',
+    name: 'Chili',
+    cookDate: today,
+    fridgeDays: 4,
+    freezes: true,
+    reheat: '',
+    ingredients: [],
+    nutrition: { kcal: 600, protein: 40 },
+  };
+  const plan = {
+    id: 'p',
+    start: today,
+    people: 1,
+    recipes: [recipe],
+    fillers: [
+      { id: 'f', name: 'Skyr', when: 'Frühstück', ingredients: [], nutrition: { kcal: 300, protein: 30 } },
+    ],
+    meals: [
+      {
+        id: '1-Mittagessen',
+        date: today,
+        meal: 'Mittagessen',
+        recipeId: 'a',
+        storage: 'fridge',
+        twist: 'Mit Limette',
+      },
+    ],
+    cookDays: [{ date: today, minutes: 90, steps: [{ title: 'x', detail: '' }], done: true }],
+  };
+  const { context, page } = await open({ storage: { ...ready, 'prepora-plan': plan } });
+  assert.match(await page.locator('#twist').innerText(), /Mit Limette/);
+  assert.match(await page.locator('#gap').innerText(), /Skyr/);
+  await page.click('[data-action="eatFiller"]');
+  assert.match(await page.locator('.day-line').innerText(), /^300/);
+  await page.click('[data-action="skipMeal"]');
+  assert.match(await page.locator('#notice').innerText(), /Tiefkühler/);
+  assert.equal(await page.locator('#nextMeal').count(), 0);
+  const stock = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-stock')));
+  assert.equal(stock[0].portions, 1);
+  await context.close();
+});
+
+test('the list has everything for the week in one shop', async () => {
+  const { context, page } = await open({ storage: ready });
+  await page.click('[data-tab="more"]');
+  await page.click('#openSupplements');
+  await page.fill('#supplementAdd [name="name"]', 'Kreatin');
+  await page.fill('#supplementAdd [name="dose"]', '3 g');
+  await page.click('#supplementAdd button');
+  await page.waitForSelector('#supplementList');
+  await page.click('[data-tab="plan"]');
+  await page.click('[data-action="newWeek"]');
+  await page.waitForSelector('#weekList');
+  assert.match(await page.locator('#boxLine').innerText(), /14 Boxen/);
+  await page.click('[data-tab="shop"]');
+  const list = await page.locator('.page').innerText();
+  assert.match(list, /Alles für die ganze Woche, Einkauf/);
+  assert.match(list, /Geschätzt ca\. \d+ €/);
+  assert.match(list, /Skyr/);
+  assert.match(list, /Prüfen, ob da/);
+  assert.match(list, /Kreatin/);
+  await context.close();
+});
+
+test('a dish photo gives no number when it would be a guess, a name makes it an estimate', async () => {
+  const { context, page, calls } = await open({ storage: ready });
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  await page.setInputFiles('#dishPhoto', { name: 'd.png', mimeType: 'image/png', buffer: png });
+  await page.waitForSelector('#dishResult');
+  const unsure = await page.locator('#dishResult').innerText();
+  assert.match(unsure, /Zu unsicher/);
+  assert.match(unsure, /Menge ist nicht zu sehen/);
+  assert.doesNotMatch(unsure, /kcal/);
+  assert.equal(await page.locator('[data-action="addDish"]').count(), 0);
+
+  await page.fill('#dishFix [name="name"]', 'Lasagne, normale Portion');
+  await page.click('#dishFix button');
+  await page.waitForSelector('#dishRange');
+  assert.match(await page.locator('#dishRange').innerText(), /600–800 kcal/);
+  const asked = JSON.parse(calls.filter((call) => call.path === '/v1/ai/messages').at(-1).body);
+  assert.equal(asked.messages[0].content[0].type, 'image');
+
+  await page.click('[data-action="addDish"]');
+  await page.click('.back');
+  assert.match(await page.locator('.page').innerText(), /700/);
+  const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }));
+  assert.equal(stored.includes('base64'), false, 'the photo is not kept');
+  await context.close();
+});
+
+test('supplements: own list, advice from Claude, one tap to adopt and to tick off', async () => {
+  const profile = { ...person, health: 'Blutverdünner', diet: ['Vegan'] };
+  const { context, page, calls } = await open({ storage: { ...signedIn, 'prepora-profile': profile } });
+  await page.click('[data-tab="more"]');
+  await page.click('#openSupplements');
+  await page.click('[data-action="askAdvice"]');
+  await page.waitForSelector('#advice');
+  const sent = JSON.parse(calls.find((call) => call.path === '/v1/ai/messages').body);
+  assert.match(sent.messages[0].content, /Blutverdünner/);
+  assert.match(sent.messages[0].content, /Vegan/);
+  const shown = await page.locator('#advice').innerText();
+  assert.match(shown, /Kreatin/);
+  assert.match(shown, /Studienlage: stark/);
+  assert.match(shown, /Vorher Bluttest/);
+  assert.match(shown, /BCAA/);
+  assert.match(shown, /ärztlichen Rat/);
+  await page.locator('[data-action="adoptSupplement"]').first().click();
+  assert.match(await page.locator('#supplementList').innerText(), /Kreatin/);
+  await page.click('[data-tab="today"]');
+  await page.click('[data-action="takeSupplement"]');
+  assert.equal(await page.locator('[data-action="takeSupplement"]').getAttribute('aria-pressed'), 'true');
+  await context.close();
+});
+
+test('own recipes come from text, go into the next plan once, and an unreadable one says so', async () => {
+  const { context, page, calls } = await open({ storage: ready });
+  await page.click('[data-tab="more"]');
+  await page.click('#openRecipes');
+  await page.fill('[name="source"]', 'Das ist kein Rezept');
+  await page.click('#recipeImport button');
+  await page.waitForSelector('.error');
+  assert.match(await page.locator('.error').innerText(), /kein Rezept/);
+
+  await page.fill('[name="source"]', 'https://example.com/gulasch');
+  await page.click('#recipeImport button');
+  await page.waitForSelector('#myRecipeList');
+  assert.match(
+    await page.locator('#myRecipeList').innerText(),
+    /Omas Gulasch[\s\S]*Pro Portion ca\. 300 kcal/
+  );
+  const asked = JSON.parse(calls.filter((call) => call.path === '/v1/ai/messages').at(-1).body);
+  assert.equal(asked.tools[0].type, 'web_fetch_20260209');
+
+  await page.click('[data-tab="plan"]');
+  await page.click('[data-action="newWeek"]');
+  await page.waitForSelector('#weekList');
+  const planCall = JSON.parse(calls.filter((call) => call.path === '/v1/ai/messages').at(-1).body);
+  assert.match(planCall.messages[0].content, /Omas Gulasch/);
+  const mine = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-myRecipes')));
+  assert.equal(mine[0].wanted, undefined);
+  await context.close();
+});
+
+test('fixed times are set in the profile, a second cook day only shows when chosen', async () => {
+  const { context, page } = await open({ storage: ready });
+  await page.click('[data-tab="more"]');
+  await page.click('#openProfile');
+  assert.equal(await page.locator('[name="cookTime2"]').count(), 0);
+  await page.locator('.pill', { hasText: 'Zwei' }).click();
+  await page.waitForSelector('[name="cookTime2"]');
+  await page.fill('[name="cookTime"]', '09:30');
+  await page.fill('[name="shopTime"]', '18:15');
+  await page.locator('h1').click();
+  await page.locator('input[name="shopWeekday"][value="5"]').evaluate((el) => el.click());
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
+  assert.equal(saved.cookDays, 2);
+  assert.equal(saved.cookTime, '09:30');
+  assert.equal(saved.shopTime, '18:15');
+  assert.equal(saved.shopWeekday, 5);
   await context.close();
 });

@@ -628,3 +628,52 @@ h2.section {
 .cook > .primary {
   margin-top: 16px;
 }
+
+.hero .text-button {
+  align-self: center;
+}
+.chip.taken {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.as-button {
+  margin-top: 16px;
+}
+.fields.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+.with-unit input[type='time'] {
+  appearance: none;
+  -webkit-appearance: none;
+}
+.page .big {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 700;
+}
+.warn {
+  color: var(--danger);
+  font-size: 13px;
+}
+.advice .row {
+  align-items: flex-start;
+}
+
+.primary.spaced {
+  margin-top: 20px;
+}
+
+.row .grow .muted {
+  display: block;
+  text-align: left;
+}
+.pills.week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.pills.week .pill span {
+  justify-content: center;
+  padding: 0;
+}

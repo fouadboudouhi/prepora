@@ -1,16 +1,19 @@
 // The shell: sign-in with the Volumora account, four tabs, and the full-screen cook day above them.
-import { getStock } from './actions.js';
+import { applyTrend, getStock, updateBlocks } from './actions.js';
 import { askHelper, cookActions, cookView, cooking, startTicking } from './cookView.js';
 import { planActions, planView, readFridgePhoto } from './planView.js';
-import { saveFromForm, profileView, showTargets } from './profileView.js';
+import { photoActions, photoView, readDishPhoto, recheckDish } from './photoView.js';
+import { saveFromForm, profileActions, profileView, showTargets } from './profileView.js';
+import { importRecipe, importRecipePhoto, recipeActions, recipesView } from './recipesView.js';
 import { pushOn } from './push.js';
 import { getSession, refreshMe, signIn, signOut } from './session.js';
 import { shopActions, shopView } from './shopView.js';
 import { addStock, stockActions, stockView } from './stockView.js';
+import { addSupplement, supplementActions, supplementsView } from './supplementsView.js';
 import { clearAfterSignOut, startSync, syncNow } from './sync.js';
 import { tasteActions, tasteView } from './tasteView.js';
 import { todayActions, todayView } from './todayView.js';
-import { errorText, esc, number, setRedraw } from './ui.js';
+import { errorText, esc, number, setOpener, setRedraw } from './ui.js';
 import { updateFromVolumora } from './volumora.js';
 
 const TABS = [
@@ -20,7 +23,14 @@ const TABS = [
   { id: 'more', label: 'Mehr', title: 'Mehr', view: moreView },
 ];
 // Screens that open from a tab and keep it lit. They bring their own title and way back.
-const SUB_VIEWS = { profile: profileView, stock: stockView, taste: tasteView };
+const SUB_VIEWS = {
+  profile: profileView,
+  stock: stockView,
+  taste: tasteView,
+  supplements: supplementsView,
+  recipes: recipesView,
+  photo: photoView,
+};
 const ACTIONS = {
   ...todayActions,
   ...planActions,
@@ -28,6 +38,10 @@ const ACTIONS = {
   ...stockActions,
   ...tasteActions,
   ...cookActions,
+  ...profileActions,
+  ...photoActions,
+  ...supplementActions,
+  ...recipeActions,
 };
 
 const money = (value) => `${Number(value).toFixed(2).replace('.', ',')} $`;
@@ -47,6 +61,8 @@ function moreView() {
     <div class="list">
       <button type="button" class="row" data-tab="profile" id="openProfile"><span>Profil</span><span class="muted">Ziel, Körper, Kochen, Essen</span></button>
       <button type="button" class="row" data-tab="taste" id="openTaste"><span>Geschmack</span><span class="muted">Was Prepora über dich weiß</span></button>
+      <button type="button" class="row" data-tab="recipes" id="openRecipes"><span>Eigene Rezepte</span><span class="muted">Aus Link, Foto oder Text</span></button>
+      <button type="button" class="row" data-tab="supplements" id="openSupplements"><span>Supplements</span><span class="muted">Deine und was Claude rät</span></button>
       <button type="button" class="row" data-tab="stock" id="openStock"><span>Tiefkühler</span><span class="muted">${number(portions)} ${portions === 1 ? 'Portion' : 'Portionen'}</span></button>
     </div>
     <div class="list">
@@ -68,7 +84,8 @@ function draw() {
     }
   }
   const sub = SUB_VIEWS[current];
-  const tab = TABS.find((entry) => entry.id === (sub ? 'more' : current)) ?? TABS[0];
+  const lit = current === 'photo' ? 'today' : sub ? 'more' : current;
+  const tab = TABS.find((entry) => entry.id === lit) ?? TABS[0];
   const content = sub ? sub() : `<h1>${tab.title}</h1>${tab.view()}`;
   app.innerHTML = `
     <main class="page">${content}</main>
@@ -83,7 +100,12 @@ function draw() {
 
 // A redraw from the background must not throw away what is being typed, nor jump to the top of the page.
 function redrawKeepingPlace() {
-  if (document.activeElement?.matches?.('input[type="text"], input[type="number"], textarea')) return;
+  if (
+    document.activeElement?.matches?.(
+      'input[type="text"], input[type="number"], input[type="time"], textarea'
+    )
+  )
+    return;
   const top = window.scrollY;
   draw();
   window.scrollTo(0, top);
@@ -124,10 +146,11 @@ function refreshAccount() {
       if (!getSession()) showGate();
     });
   updateFromVolumora()
+    .catch(() => false)
     .then((changed) => {
-      if (changed) redrawKeepingPlace();
-    })
-    .catch(() => {});
+      if (applyTrend() || changed) redrawKeepingPlace();
+    });
+  updateBlocks();
 }
 
 function start() {
@@ -140,6 +163,7 @@ function start() {
 }
 
 setRedraw(redrawKeepingPlace);
+setOpener(open);
 
 const FORMS = {
   async signIn() {
@@ -168,6 +192,22 @@ const FORMS = {
     form.elements.name.value = '';
     form.elements.name.blur();
     addStock(name);
+  },
+  supplementAdd(form) {
+    addSupplement(form.elements.name.value, form.elements.dose.value);
+    form.reset();
+    document.activeElement?.blur?.();
+  },
+  recipeImport(form) {
+    const text = form.elements.source.value;
+    form.reset();
+    document.activeElement?.blur?.();
+    importRecipe(text);
+  },
+  dishFix(form) {
+    const name = form.elements.name.value;
+    document.activeElement?.blur?.();
+    recheckDish(name);
   },
   cookHelper(form) {
     const question = form.elements.question.value;
@@ -210,7 +250,19 @@ const saveProfileChange = (event) => {
 };
 app.addEventListener('change', (event) => {
   saveProfileChange(event);
-  if (event.target.id === 'fridgePhoto' && event.target.files?.[0]) readFridgePhoto(event.target.files[0]);
+  const file = event.target.files?.[0];
+  if (file) {
+    const readers = {
+      fridgePhoto: readFridgePhoto,
+      dishPhoto: readDishPhoto,
+      recipePhoto: importRecipePhoto,
+    };
+    readers[event.target.id]?.(file);
+  }
+  if (event.target.closest?.('#profile')) {
+    updateBlocks();
+    if (event.target.name === 'cookDays') redrawKeepingPlace();
+  }
 });
 app.addEventListener('input', saveProfileChange);
 

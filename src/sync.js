@@ -5,7 +5,18 @@ import { onChange, read, write } from './store.js';
 
 const PATH = '/v1/apps/prepora/snapshot';
 const STATE = 'sync';
-const SYNCED = ['profile', 'taste', 'plan', 'history', 'stock', 'shop', 'fridge'];
+const SYNCED = [
+  'profile',
+  'taste',
+  'plan',
+  'history',
+  'stock',
+  'shop',
+  'fridge',
+  'extras',
+  'supplements',
+  'myRecipes',
+];
 const DELAY = 5000;
 
 let timer = null;

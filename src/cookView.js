@@ -1,6 +1,6 @@
 // Der Kochmodus: all recipes as one line of steps. A step with a timer starts it with the tap that moves on, so hands
 // stay free. Timers keep their end time, so a locked phone never makes them wrong; the server rings when it is locked.
-import { getPlan, getStock, saveStock, savePlan, scheduleReminders } from './actions.js';
+import { getPlan, getStock, saveStock, savePlan, scheduleReminders, updateBlocks } from './actions.js';
 import { askClaude } from './ai.js';
 import { boxLabels, recipeOf } from './planner.js';
 import { enablePush, setAlarms } from './push.js';
@@ -220,7 +220,10 @@ export const cookActions = {
     unlockSound();
     keepAwake();
     enablePush().then((on) => {
-      if (on) scheduleReminders(getPlan());
+      if (on) {
+        scheduleReminders(getPlan());
+        updateBlocks();
+      }
     });
     const running = session();
     saveSession(running?.date === el.dataset.date ? running : { date: el.dataset.date, step: 0, timers: [] });

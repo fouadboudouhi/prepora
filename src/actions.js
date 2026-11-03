@@ -1,6 +1,6 @@
 // What happens to the week: planning it, eating from it, and everything the app remembers on the way.
 import { askClaudeJson } from './ai.js';
-import { getProfile } from './profile.js';
+import { getProfile, saveProfile } from './profile.js';
 import {
   PLAN_SCHEMA,
   PLAN_SYSTEM,
@@ -12,10 +12,12 @@ import {
   placeStock,
   planRequest,
   repeatPlan,
+  skipMeal,
 } from './planner.js';
-import { planAlarms, setAlarms } from './push.js';
+import { planAlarms, setAlarms, syncBlocks } from './push.js';
 import { SessionError } from './session.js';
 import { read, write } from './store.js';
+import { nextAdjustment } from './trend.js';
 import { rerender } from './ui.js';
 
 const DAY = 86400000;
@@ -37,6 +39,20 @@ export function getFridge() {
 export const saveFridge = (items) =>
   write('fridge', items.length ? { items, at: new Date().toISOString() } : null);
 
+const EXTRA_DAYS = 14;
+export const getExtras = (date) => read('extras', {})[date] ?? [];
+export function addExtra(date, entry) {
+  const extras = read('extras', {});
+  const oldest = localDay(new Date(Date.now() - EXTRA_DAYS * DAY));
+  const kept = Object.fromEntries(Object.entries(extras).filter(([day]) => day >= oldest));
+  write('extras', { ...kept, [date]: [...(kept[date] ?? []), entry] });
+}
+
+export const getMyRecipes = () => read('myRecipes', []);
+export const saveMyRecipes = (list) => write('myRecipes', list);
+export const getSupplements = () => read('supplements', { mine: [], taken: {}, advice: null });
+export const saveSupplements = (value) => write('supplements', value);
+
 export const planning = { busy: false, error: null, replacing: null };
 
 export function scheduleReminders(plan) {
@@ -57,6 +73,9 @@ function adopt(plan) {
   scheduleReminders(plan);
   savePlan(plan);
   write('shop', {});
+  // An own recipe asked for once is in the plan now.
+  const mine = getMyRecipes();
+  if (mine.some((recipe) => recipe.wanted)) saveMyRecipes(mine.map(({ wanted, ...recipe }) => recipe));
 }
 
 // One correction is worth paying for when the answer breaks a rule. A second one is not; then the person hears it.
@@ -99,7 +118,17 @@ export function newWeek() {
     const start = nextStart(profile.cookWeekday ?? 0);
     const stock = getStock();
     const placed = placeStock(buildSlots(profile, start), stock, profile.people ?? 1);
+    const wanted = getMyRecipes().filter((recipe) => recipe.wanted);
     return requestPlan({
+      ownRecipes: wanted.map(({ name, servings, fridgeDays, freezes, reheat, ingredients, steps }) => ({
+        name,
+        servings,
+        fridgeDays,
+        freezes,
+        reheat,
+        ingredients,
+        steps,
+      })),
       profile,
       taste: getTaste(),
       fridge: getFridge(),
@@ -129,6 +158,7 @@ export function replaceRecipe(recipeId) {
       slots,
       previous: {
         recipes: recipes.map(({ nutrition, portions, estimated, ...rest }) => rest),
+        fillers: (plan.fillers ?? []).map(({ nutrition, ...rest }) => rest),
         assignments: meals
           .filter((meal) => meal.recipeId)
           .map((meal) => ({ slot: meal.id, recipeId: meal.recipeId })),
@@ -196,3 +226,38 @@ export function rate(mealId, rating) {
   if (rating === 'no') taste.never.push(name);
   saveTaste(taste);
 }
+
+// One tap on a box that is not eaten today. What happens to it follows from what is safe.
+export function skip(mealId) {
+  const plan = getPlan();
+  const profile = getProfile();
+  const result = skipMeal(plan, mealId, { today: localDay(), freezer: profile.freezer !== false });
+  if (result.outcome === 'frozen') {
+    const stock = getStock();
+    const today = localDay();
+    const found = stock.find((item) => item.recipeId === result.recipe.id && item.frozenAt === today);
+    if (found) found.portions += plan.people ?? 1;
+    else
+      stock.push({
+        id: `s-${today}-${result.recipe.id}`,
+        recipeId: result.recipe.id,
+        name: result.recipe.name,
+        portions: plan.people ?? 1,
+        frozenAt: today,
+        nutrition: result.recipe.nutrition,
+      });
+    saveStock(stock);
+  }
+  savePlan(plan);
+  return result.outcome;
+}
+
+// Once in a while the real weight curve corrects the target; the person only reads about it.
+export function applyTrend() {
+  const profile = getProfile();
+  const change = nextAdjustment(profile);
+  if (change) saveProfile({ ...profile, ...change });
+  return !!change;
+}
+
+export const updateBlocks = () => syncBlocks(getProfile());

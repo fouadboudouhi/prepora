@@ -23,7 +23,7 @@ const inRange = (value, [min, max]) => Number.isFinite(value) && value >= min &&
 const roundTo = (value, step) => Math.round(value / step) * step;
 
 // Null until goal and body are complete and believable. `limited` names why the plan differs from the plain goal.
-export function dailyTargets({ goal, sex, age, height, weight, activity } = {}) {
+export function dailyTargets({ goal, sex, age, height, weight, activity, kcalAdjust = 0 } = {}) {
   const chosen = GOALS[goal];
   const moving = ACTIVITY[activity];
   if (!chosen || !moving) return null;
@@ -42,11 +42,12 @@ export function dailyTargets({ goal, sex, age, height, weight, activity } = {}) 
   const bmi = weight / (height / 100) ** 2;
   const deficit = chosen.kcal < 0;
   let limited = null;
-  let kcal = need + chosen.kcal;
+  // What the real weight curve taught (see trend.js) moves the target, but never past the limits below.
+  let kcal = need + chosen.kcal + kcalAdjust;
   if (deficit && bmi < UNDERWEIGHT) {
-    kcal = need;
+    kcal = need + Math.max(0, kcalAdjust);
     limited = 'underweight';
-  } else if (deficit && kcal < Math.max(resting, floor)) {
+  } else if (kcal < Math.max(resting, floor)) {
     // Rounded up, so the rounding cannot take it below the limit again.
     kcal = Math.ceil(Math.max(resting, floor) / 50) * 50;
     limited = 'floor';

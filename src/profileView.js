@@ -1,8 +1,11 @@
 // The profile as one form that saves on every change, with the daily targets above it.
 import { ACTIVITY, GOALS, dailyTargets } from './nutrition.js';
+import { updateBlocks } from './actions.js';
+import { shareCalendar } from './calendar.js';
 import { DEVICES, DIETS, MEALS, getProfile, saveProfile } from './profile.js';
-
-import { esc, number } from './ui.js';
+import { enablePush, pushOn, pushSupported } from './push.js';
+import { addWeight } from './trend.js';
+import { esc, number, rerender } from './ui.js';
 
 export function targetText(targets) {
   return `ca. ${number(targets.kcal)} kcal, ${number(targets.protein)} g Eiweiß am Tag`;
@@ -14,7 +17,7 @@ const NOTES = {
 };
 
 const pills = (name, options, selected, type = 'radio') => `
-  <div class="pills">
+  <div class="pills${options.length === 7 ? ' week' : ''}">
     ${options
       .map(([value, label]) => {
         const on = type === 'radio' ? String(selected) === String(value) : selected.includes(value);
@@ -23,6 +26,23 @@ const pills = (name, options, selected, type = 'radio') => `
       .join('')}
   </div>`;
 const same = (values) => values.map((value) => [value, value]);
+const WEEK = [
+  [1, 'Mo'],
+  [2, 'Di'],
+  [3, 'Mi'],
+  [4, 'Do'],
+  [5, 'Fr'],
+  [6, 'Sa'],
+  [0, 'So'],
+];
+const timeField = (name, label, value) => `
+  <label class="field">${label}
+    <span class="with-unit"><input type="time" name="${name}" value="${esc(value)}"></span>
+  </label>`;
+const optionalNumber = (name, label, value, unit) => `
+  <label class="field">${label}
+    <span class="with-unit"><input type="number" inputmode="numeric" name="${name}" value="${value ?? ''}"><span class="muted">${unit}</span></span>
+  </label>`;
 const field = (name, label, value, unit) => `
   <label class="field">${label}
     <span class="with-unit"><input type="number" inputmode="numeric" name="${name}" value="${value ?? ''}"><span class="muted">${unit}</span></span>
@@ -76,16 +96,26 @@ export function profileView() {
           ],
           profile.cookDays
         )}
-        <p class="caption">Erster Kochtag</p>
-        ${pills(
-          'cookWeekday',
-          [
-            [6, 'Sa'],
-            [0, 'So'],
-            [1, 'Mo'],
-          ],
-          profile.cookWeekday
-        )}
+        <p class="caption">${profile.cookDays === 2 ? 'Erster Kochtag' : 'Kochtag'}</p>
+        ${pills('cookWeekday', WEEK, profile.cookWeekday)}
+        ${timeField('cookTime', 'Um', profile.cookTime)}
+        ${
+          profile.cookDays === 2
+            ? `<p class="caption">Zweiter Kochtag</p>
+               ${pills('cookWeekday2', WEEK, profile.cookWeekday2)}
+               ${timeField('cookTime2', 'Um', profile.cookTime2)}`
+            : ''
+        }
+        <p class="caption">Einkauf, einmal pro Woche</p>
+        ${pills('shopWeekday', WEEK, profile.shopWeekday)}
+        ${timeField('shopTime', 'Um', profile.shopTime)}
+        <button type="button" class="secondary" data-action="addCalendar">In den Kalender eintragen</button>
+        ${
+          pushSupported() && !pushOn()
+            ? '<button type="button" class="secondary" data-action="enableReminders">Erinnerungen einschalten</button>'
+            : ''
+        }
+        <p class="note" id="blockNote" role="status"></p>
         <p class="caption">Gegessen wird an</p>
         ${pills(
           'eatDays',
@@ -124,11 +154,18 @@ export function profileView() {
         )}
         <p class="caption">Geräte</p>
         ${pills('devices', same(DEVICES), profile.devices, 'checkbox')}
+        <div class="fields two">
+          ${optionalNumber('boxes', 'Boxen zu Hause', profile.boxes, 'Stück')}
+          ${optionalNumber('budget', 'Einkauf pro Woche', profile.budget, '€')}
+        </div>
       </fieldset>
       <fieldset><legend>Dein Essen</legend>
         ${pills('diet', same(DIETS), profile.diet, 'checkbox')}
         <label class="field">Das magst du nicht oder verträgst es nicht
           <textarea name="avoid" rows="2" maxlength="300">${esc(profile.avoid)}</textarea>
+        </label>
+        <label class="field">Medikamente oder Erkrankungen, nur für die Supplement-Beratung und freiwillig
+          <textarea name="health" rows="2" maxlength="300">${esc(profile.health)}</textarea>
         </label>
       </fieldset>
     </form>`;
@@ -145,7 +182,9 @@ function readForm(form, before) {
   return {
     ...before,
     // Typed in by hand it counts as new, until Volumora has something newer.
-    ...(weight !== before.weight ? { weightAt: Date.now(), weightFrom: '' } : {}),
+    ...(weight !== before.weight
+      ? { weightAt: Date.now(), weightFrom: '', weights: addWeight(before.weights, weight) }
+      : {}),
     ...(activity !== before.activity ? { activityFrom: '' } : {}),
     goal: data.get('goal') ?? '',
     sex: data.get('sex') ?? '',
@@ -154,6 +193,14 @@ function readForm(form, before) {
     weight,
     activity,
     cookWeekday: numeric('cookWeekday') ?? 0,
+    cookTime: data.get('cookTime') || before.cookTime,
+    cookWeekday2: numeric('cookWeekday2') ?? before.cookWeekday2,
+    cookTime2: data.get('cookTime2') || before.cookTime2,
+    shopWeekday: numeric('shopWeekday') ?? before.shopWeekday,
+    shopTime: data.get('shopTime') || before.shopTime,
+    boxes: numeric('boxes'),
+    budget: numeric('budget'),
+    health: String(data.get('health') ?? '').trim(),
     eatDays: numeric('eatDays') ?? 7,
     people: numeric('people') ?? 1,
     cookDays: numeric('cookDays') ?? 1,
@@ -170,8 +217,10 @@ export function showTargets() {
   const box = document.getElementById('targets');
   if (!box) return;
   const targets = dailyTargets(getProfile());
+  const profile = getProfile();
+  const adjusted = profile.kcalAdjust && profile.adjustNote ? profile.adjustNote : '';
   box.innerHTML = targets
-    ? `<strong>${targetText(targets)}</strong>${targets.limited ? `<span class="muted">${NOTES[targets.limited]}</span>` : ''}`
+    ? `<strong>${targetText(targets)}</strong>${targets.limited ? `<span class="muted">${NOTES[targets.limited]}</span>` : ''}${adjusted ? `<span class="muted" id="adjustNote">${esc(adjusted)}</span>` : ''}`
     : '<span class="muted">Ziel, Alter ab 18, Größe, Gewicht und Bewegung ergeben deine Tageswerte.</span>';
 }
 
@@ -179,3 +228,21 @@ export function saveFromForm(form) {
   saveProfile(readForm(form, getProfile()));
   showTargets();
 }
+
+export const profileActions = {
+  addCalendar: async () => {
+    const note = document.getElementById('blockNote');
+    const done = await shareCalendar(getProfile());
+    if (note) note.textContent = done ? '' : 'Das hat auf diesem Gerät nicht geklappt.';
+  },
+  enableReminders: async () => {
+    if (await enablePush()) {
+      updateBlocks();
+      rerender();
+    } else {
+      const note = document.getElementById('blockNote');
+      if (note)
+        note.textContent = 'Auf dem iPhone geht das nur in der installierten App, und du musst es erlauben.';
+    }
+  },
+};

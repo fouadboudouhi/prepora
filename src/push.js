@@ -52,13 +52,59 @@ export function planAlarms(plan, nameOf, now = Date.now()) {
         title: 'Heute Abend auftauen',
         body: `${nameOf(meal)} aus dem Tiefkühler in den Kühlschrank legen`,
       });
-  for (const day of plan?.cookDays ?? [])
-    if (!day.done)
-      alarms.push({
-        id: `cook-${day.date}`,
-        at: atHour(day.date, 10),
-        title: 'Heute ist Kochtag',
-        body: `Etwa ${day.minutes} Minuten, die Einkaufsliste ist bereit`,
-      });
   return alarms.filter((alarm) => alarm.at > now);
+}
+
+const BLOCK_DAYS = 56;
+const CANCEL_DAYS = 60;
+const DAY = 86400000;
+const dateAhead = (now, days) => {
+  const at = new Date(now + days * DAY);
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+};
+const timeOf = (date, time) => new Date(`${date}T${time}:00`).getTime();
+
+// The fixed times of the week, for the next weeks. They stand whether a plan exists or not, and the same day keeps the
+// same id, so changing a time replaces the reminder instead of adding one.
+export function blockAlarms(profile, now = Date.now()) {
+  const alarms = [];
+  const minutes = profile.cookMinutes ?? 90;
+  for (let days = 0; days < BLOCK_DAYS; days += 1) {
+    const date = dateAhead(now, days);
+    const weekday = new Date(`${date}T12:00:00`).getDay();
+    if (weekday === (profile.cookWeekday ?? 0))
+      alarms.push({
+        id: `cook-${date}`,
+        at: timeOf(date, profile.cookTime ?? '10:00'),
+        title: 'Zeit zum Kochen',
+        body: `Dein Kochtag, etwa ${minutes} Minuten`,
+      });
+    else if ((profile.cookDays ?? 1) === 2 && weekday === (profile.cookWeekday2 ?? 3))
+      alarms.push({
+        id: `cook-${date}`,
+        at: timeOf(date, profile.cookTime2 ?? '18:00'),
+        title: 'Zeit zum Kochen',
+        body: `Dein zweiter Kochtag, etwa ${minutes} Minuten`,
+      });
+    if (weekday === (profile.shopWeekday ?? 6))
+      alarms.push({
+        id: `shop-${date}`,
+        at: timeOf(date, profile.shopTime ?? '17:00'),
+        title: 'Zeit zum Einkaufen',
+        body: 'Deine Liste für die ganze Woche ist bereit',
+      });
+  }
+  return alarms.filter((alarm) => alarm.at > now);
+}
+
+export function syncBlocks(profile) {
+  const alarms = blockAlarms(profile);
+  const keep = new Set(alarms.map((alarm) => alarm.id));
+  const stale = [];
+  for (let days = 0; days < CANCEL_DAYS; days += 1)
+    for (const kind of ['cook', 'shop']) {
+      const id = `${kind}-${dateAhead(Date.now(), days)}`;
+      if (!keep.has(id)) stale.push(id);
+    }
+  return setAlarms(alarms, stale);
 }

@@ -10,6 +10,7 @@ const MEAL_ORDER = ['Frühstück', 'Mittagessen', 'Abendessen'];
 export const FRIDGE_DAYS = 4;
 const MIN_SCALE = 0.75;
 const MAX_SCALE = 1.3;
+const OVER_BUDGET = 1.2;
 
 const iso = (date) => new Date(date).toISOString().slice(0, 10);
 const dayNumber = (text) => Date.parse(`${text}T00:00:00Z`) / DAY;
@@ -36,12 +37,25 @@ export function buildSlots(profile, start) {
 
 // The second cook day sits in the middle of the week.
 export const cookDates = (profile, start) =>
-  (profile.cookDays ?? 1) === 2 ? [start, addDays(start, Math.ceil((profile.eatDays ?? 7) / 2))] : [start];
+  (profile.cookDays ?? 1) === 2 ? [start, secondCookDay(profile, start)] : [start];
 
-const ingredientSchema = {
+function secondCookDay(profile, start) {
+  if (profile.cookWeekday2 === undefined || profile.cookWeekday2 === null)
+    return addDays(start, Math.ceil((profile.eatDays ?? 7) / 2));
+  const ahead = (profile.cookWeekday2 - new Date(`${start}T00:00:00Z`).getUTCDay() + 7) % 7;
+  return addDays(start, ahead || 7);
+}
+
+// One shop a week: the last shop day before the first cook day, or that very day.
+export function shopDate(profile, start) {
+  const back = (new Date(`${start}T00:00:00Z`).getUTCDay() - (profile.shopWeekday ?? 6) + 7) % 7;
+  return addDays(start, -back);
+}
+
+export const ingredientSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['name', 'food', 'grams', 'category', 'packGrams', 'per100'],
+  required: ['name', 'food', 'grams', 'category', 'packGrams', 'packEuro', 'per100'],
   properties: {
     name: { type: 'string' },
     food: { type: 'string' },
@@ -51,6 +65,7 @@ const ingredientSchema = {
       enum: ['Fleisch und Fisch', 'Kühlregal', 'Gemüse und Obst', 'Vorrat', 'Tiefkühl'],
     },
     packGrams: { type: 'number' },
+    packEuro: { type: 'number' },
     per100: {
       type: 'object',
       additionalProperties: false,
@@ -67,14 +82,29 @@ const ingredientSchema = {
 export const PLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['recipes', 'assignments', 'cookDays'],
+  required: ['recipes', 'assignments', 'cookDays', 'fillers'],
   properties: {
+    fillers: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'name', 'when', 'servings', 'ingredients'],
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          when: { type: 'string' },
+          servings: { type: 'integer' },
+          ingredients: { type: 'array', items: ingredientSchema },
+        },
+      },
+    },
     recipes: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'name', 'cookDate', 'fridgeDays', 'freezes', 'reheat', 'ingredients'],
+        required: ['id', 'name', 'cookDate', 'fridgeDays', 'freezes', 'reheat', 'twists', 'ingredients'],
         properties: {
           id: { type: 'string' },
           name: { type: 'string' },
@@ -82,6 +112,7 @@ export const PLAN_SCHEMA = {
           fridgeDays: { type: 'integer' },
           freezes: { type: 'boolean' },
           reheat: { type: 'string' },
+          twists: { type: 'array', items: { type: 'string' } },
           ingredients: { type: 'array', items: ingredientSchema },
         },
       },
@@ -140,6 +171,10 @@ Regeln:
 - "recipeId" eines Schritts ist das Rezept, um das es geht, oder leer bei Vorbereitung und Portionieren.
 - Gegartes Geflügel und Hack müssen durchgegart sein; sage es im Schritt, wo es zählt.
 - Deutsch, kurz und klar. "reheat" ist ein kurzer Satz wie "2 Minuten Mikrowelle".
+- "twists": zwei bis drei kleine Varianten pro Rezept, die beim Aufwärmen in einer Minute aus derselben Box etwas anderes machen, zum Beispiel "Mit Limette und Koriander". Was sie brauchen, steht in "ingredients".
+- "fillers": zwei bis drei Bausteine ganz ohne Kochen für den Rest des Tagesziels, zum Beispiel Frühstück oder Snack. "when" ist kurz wie "Frühstück", "servings" die Portionen für die Woche, "ingredients" die Mengen für alle Portionen. Ist keine Lücke genannt, ist die Liste leer.
+- Es wird nur einmal pro Woche eingekauft. Frisches Fleisch und frischer Fisch für einen späteren Kochtag müssen bis dahin halten: dann als Tiefkühlware planen oder im Kochablauf ans Auftauen erinnern. Empfindliches Gemüse und Kräuter früh in der Woche verbrauchen.
+- "packEuro": geschätzter Preis einer Packung im deutschen Discounter, bei loser Ware der Preis für diese Menge. Gewürze und Grundvorrat wie Salz, Pfeffer und Öl stehen auch in "ingredients", mit "food" "gewuerze" wenn sie kaum Kalorien haben.
 
 Erlaubte Lebensmittel-Kennungen: ${FOOD_IDS.join(', ')}`;
 
@@ -153,9 +188,10 @@ function tasteLines(taste) {
 }
 
 // What Claude gets to know for this one week.
-export function planRequest({ profile, taste, slots, start, fridge, correction, previous }) {
+export function planRequest({ profile, taste, slots, start, fridge, correction, previous, ownRecipes = [] }) {
   const targets = dailyTargets(profile);
   const dates = cookDates(profile, start);
+  const gap = targets ? dayGap(profile, targets) : null;
   const lines = [
     `Ziel: ${GOALS[profile.goal]?.label ?? 'gesund essen'}.`,
     targets
@@ -169,12 +205,30 @@ export function planRequest({ profile, taste, slots, start, fridge, correction, 
     profile.avoid ? `Mag oder verträgt nicht: ${profile.avoid}.` : '',
     ...tasteLines(taste),
     fridge?.length ? `Noch im Kühlschrank, bitte verbrauchen: ${fridge.join(', ')}.` : '',
+    `Einkauf: einmal pro Woche, am ${shopDate(profile, start)}.`,
+    profile.budget ? `Wochenbudget für den Einkauf: etwa ${profile.budget} Euro.` : '',
+    gap ? `Lücke pro Tag und Person für "fillers": ca. ${gap.kcal} kcal und ${gap.protein} g Eiweiß.` : '',
+    ownRecipes.length
+      ? `Baue diese eigenen Rezepte in den Plan ein, Mengen darfst du anpassen: ${JSON.stringify(ownRecipes)}`
+      : '',
     `Mahlzeiten, die ein Rezept brauchen (slot = Datum und Mahlzeit stehen dahinter):`,
     ...slots.map((slot) => `${slot.id}: ${slot.date}, ${slot.meal}`),
     previous ? `Bisheriger Plan zum Anpassen: ${JSON.stringify(previous)}` : '',
     correction ?? '',
   ];
   return lines.filter(Boolean).join('\n');
+}
+
+// What the cooked meals leave open of a day.
+function dayGap(profile, targets) {
+  const covered = MEAL_ORDER.filter((meal) => profile.meals?.includes(meal)).reduce(
+    (sum, meal) => sum + MEAL_SHARE[meal],
+    0
+  );
+  const open = 1 - covered;
+  return open > 0.05
+    ? { kcal: Math.round(targets.kcal * open), protein: Math.round(targets.protein * open) }
+    : null;
 }
 
 function slotsShare(profile) {
@@ -280,6 +334,21 @@ export function finishPlan(answer, { profile, slots, start, stock = [] }) {
     })
     .filter(Boolean);
 
+  // A different small twist each time a dish comes round.
+  const round = new Map();
+  for (const meal of meals) {
+    const twists = recipes.get(meal.recipeId)?.twists ?? [];
+    if (!twists.length) continue;
+    const turn = round.get(meal.recipeId) ?? 0;
+    meal.twist = twists[turn % twists.length];
+    round.set(meal.recipeId, turn + 1);
+  }
+
+  const fillers = (answer.fillers ?? []).map((filler) => {
+    const servings = Math.max(filler.servings || 1, 1);
+    return { ...filler, servings, nutrition: perPortion(addUp(filler.ingredients ?? []), servings) };
+  });
+
   const steps = (answer.cookDays ?? []).map((day) => ({
     date: dates.includes(day.date) ? day.date : dates[0],
     minutes: day.minutes,
@@ -288,19 +357,22 @@ export function finishPlan(answer, { profile, slots, start, stock = [] }) {
   if (!steps.length || steps.some((day) => !day.steps?.length))
     problems.push('Ein Kochtag hat keine Schritte.');
 
-  return {
-    problems,
-    plan: {
-      id: `${start}-${Date.now()}`,
-      start,
-      createdAt: new Date().toISOString(),
-      people,
-      recipes: finished,
-      meals,
-      cookDays: steps,
-      stockUsed: stock.map((item) => item.id),
-    },
+  const plan = {
+    id: `${start}-${Date.now()}`,
+    start,
+    shopOn: shopDate(profile, start),
+    createdAt: new Date().toISOString(),
+    people,
+    recipes: finished,
+    fillers,
+    meals,
+    cookDays: steps,
+    stockUsed: stock.map((item) => item.id),
   };
+  plan.cost = shoppingCost(plan);
+  if (profile.budget && plan.cost > profile.budget * OVER_BUDGET)
+    problems.push(`Der Einkauf kostet etwa ${plan.cost} Euro, das Budget sind ${profile.budget} Euro.`);
+  return { problems, plan };
 }
 
 // Same food, new dates: a proven week again, without asking Claude.
@@ -310,11 +382,12 @@ export function repeatPlan(old, start) {
     ...old,
     id: `${start}-${Date.now()}`,
     start,
+    ...(old.shopOn ? { shopOn: addDays(old.shopOn, shift) } : {}),
     createdAt: new Date().toISOString(),
     recipes: old.recipes.map((recipe) => ({ ...recipe, cookDate: addDays(recipe.cookDate, shift) })),
     meals: old.meals
       .filter((meal) => !meal.stock)
-      .map(({ eaten, rating, ...meal }) => ({
+      .map(({ eaten, rating, skipped, moved, ...meal }) => ({
         ...meal,
         date: addDays(meal.date, shift),
         ...(meal.thawOn ? { thawOn: addDays(meal.thawOn, shift) } : {}),
@@ -349,41 +422,79 @@ export function placeStock(slots, stock, people = 1) {
 const PACK_WORD = (count) => (count === 1 ? '1 Packung' : `${count} Packungen`);
 const amount = (grams) =>
   grams >= 1000 ? `${String(Math.round(grams / 100) / 10).replace('.', ',')} kg` : `${grams} g`;
-const CATEGORY_ORDER = ['Fleisch und Fisch', 'Kühlregal', 'Gemüse und Obst', 'Tiefkühl', 'Vorrat'];
+const CHECK_GROUP = 'Prüfen, ob da';
+const SUPPLEMENT_GROUP = 'Supplements';
+const CATEGORY_ORDER = [
+  'Fleisch und Fisch',
+  'Kühlregal',
+  'Gemüse und Obst',
+  'Tiefkühl',
+  'Vorrat',
+  CHECK_GROUP,
+  SUPPLEMENT_GROUP,
+];
 
-// The list for the shop: same food added up, in whole packs, and what stays over.
-export function shoppingList(plan) {
+// The same food in several dishes is one line in the shop. Fillers count too: everything for the week, in one trip.
+function mergedIngredients(plan) {
   const items = new Map();
-  for (const recipe of plan.recipes ?? [])
-    for (const item of recipe.ingredients) {
-      if (item.food === 'gewuerze' && !item.grams) continue;
-      const key = (item.food || item.name).toLowerCase();
+  const sources = [...(plan.recipes ?? []), ...(plan.fillers ?? [])];
+  for (const source of sources)
+    for (const item of source.ingredients ?? []) {
+      const key = (item.food && item.food !== 'gewuerze' ? item.food : item.name).toLowerCase();
       const found = items.get(key) ?? {
         id: key,
         name: item.name,
-        category: item.category,
+        category: item.food === 'gewuerze' ? CHECK_GROUP : item.category,
         grams: 0,
         pack: item.packGrams || 0,
-        recipes: new Set(),
+        packEuro: item.packEuro || 0,
+        loose: 0,
       };
-      found.grams += item.grams;
-      found.recipes.add(recipe.name);
+      found.grams += item.grams || 0;
+      if (!found.pack) found.loose += item.packEuro || 0;
       items.set(key, found);
     }
+  return [...items.values()];
+}
+
+// The list for the shop: same food added up, in whole packs, and what stays over.
+export function shoppingList(plan, supplements = []) {
   const groups = new Map();
-  for (const item of items.values()) {
+  for (const item of mergedIngredients(plan)) {
     const packs = item.pack ? Math.ceil(item.grams / item.pack) : 0;
     const left = packs ? packs * item.pack - item.grams : 0;
-    const detail = packs
-      ? `${PACK_WORD(packs)} à ${amount(item.pack)}${left >= item.pack * 0.25 ? `, ${amount(left)} bleiben übrig` : ''}`
-      : amount(item.grams);
-    const category = item.category ?? 'Vorrat';
+    const detail =
+      item.category === CHECK_GROUP || !item.grams
+        ? 'Für diese Woche nötig'
+        : packs
+          ? `${PACK_WORD(packs)} à ${amount(item.pack)}${left >= item.pack * 0.25 ? `, ${amount(left)} bleiben übrig` : ''}`
+          : amount(item.grams);
+    const category = !item.grams ? CHECK_GROUP : (item.category ?? 'Vorrat');
     if (!groups.has(category)) groups.set(category, []);
     groups.get(category).push({ id: item.id, name: item.name, detail, left });
   }
+  if (supplements.length)
+    groups.set(
+      SUPPLEMENT_GROUP,
+      supplements.map((item) => ({
+        id: `supplement-${item.id}`,
+        name: item.name,
+        detail: 'Reicht der Vorrat noch?',
+        left: 0,
+      }))
+    );
   return [...groups.entries()]
     .sort(([a], [b]) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b))
     .map(([name, entries]) => ({ name, items: entries.sort((a, b) => a.name.localeCompare(b.name, 'de')) }));
+}
+
+// A rough sum from Claude's guessed prices, never a promise: supermarkets do not publish theirs.
+export function shoppingCost(plan) {
+  const total = mergedIngredients(plan).reduce(
+    (sum, item) => sum + (item.pack ? Math.ceil(item.grams / item.pack) * item.packEuro : item.loose),
+    0
+  );
+  return Math.round(total);
 }
 
 export const recipeOf = (plan, id) => plan?.recipes?.find((recipe) => recipe.id === id) ?? null;
@@ -412,4 +523,47 @@ export function boxLabels(plan, date) {
     labels.set(key, label);
   }
   return [...labels.values()];
+}
+
+// Before the cook day: how many boxes it takes, and whether the ones at home are enough.
+export function boxCheck(plan, date, boxes) {
+  const labels = boxLabels(plan, date);
+  const total = labels.reduce((sum, label) => sum + label.count, 0);
+  const frozen = labels
+    .filter((label) => label.storage === 'freezer')
+    .reduce((sum, label) => sum + label.count, 0);
+  return { total, frozen, short: boxes ? Math.max(0, total - boxes) : 0 };
+}
+
+// "Heute nicht": the app decides by what is safe, so this stays one tap. Changes the plan it is given.
+export function skipMeal(plan, mealId, { today, freezer = true }) {
+  const meal = plan.meals.find((entry) => entry.id === mealId);
+  if (!meal) return { outcome: 'none' };
+  const recipe = recipeOf(plan, meal.recipeId);
+  const tomorrow = addDays(today, 1);
+  const moveOn = () => {
+    meal.date = tomorrow;
+    meal.moved = true;
+    return { outcome: 'moved' };
+  };
+  // A thawed box has one more day in it and must not go back into the freezer.
+  if (meal.storage === 'freezer') {
+    if (meal.moved) {
+      meal.skipped = true;
+      return { outcome: 'expired' };
+    }
+    return moveOn();
+  }
+  const cooked = plan.cookDays.some((day) => day.done && day.date === recipe?.cookDate);
+  if (!cooked) {
+    meal.skipped = true;
+    return { outcome: 'dropped' };
+  }
+  if (freezer && recipe?.freezes) {
+    meal.skipped = true;
+    return { outcome: 'frozen', recipe };
+  }
+  if (dayNumber(tomorrow) - dayNumber(recipe.cookDate) <= recipe.fridgeDays) return moveOn();
+  meal.skipped = true;
+  return { outcome: 'expired' };
 }

@@ -12,10 +12,10 @@ import {
 import { askClaudeJson } from './ai.js';
 import { dailyTargets } from './nutrition.js';
 import { getProfile } from './profile.js';
-import { mealName, mealNutrition, weekdayOf } from './planner.js';
+import { boxCheck, mealName, mealNutrition, weekdayOf } from './planner.js';
+import { shrink } from './photo.js';
 import { dayLabel, errorText, esc, number, rerender } from './ui.js';
 
-const PHOTO_SIZE = 1280;
 const fridgeState = { busy: false, error: null };
 
 const FRIDGE_SCHEMA = {
@@ -28,6 +28,7 @@ const FRIDGE_SCHEMA = {
 function dailyAverage(plan) {
   const days = new Map();
   for (const meal of plan.meals) {
+    if (meal.skipped) continue;
     const value = mealNutrition(plan, meal);
     const day = days.get(meal.date) ?? { kcal: 0, protein: 0 };
     days.set(meal.date, {
@@ -38,6 +39,12 @@ function dailyAverage(plan) {
   const all = [...days.values()];
   const mean = (key) => Math.round(all.reduce((sum, day) => sum + day[key], 0) / (all.length || 1));
   return { kcal: mean('kcal'), protein: mean('protein') };
+}
+
+function boxLine(plan, date) {
+  const { total, frozen, short } = boxCheck(plan, date, getProfile().boxes);
+  const main = `${total} Boxen${frozen ? `, davon ${frozen} fürs Einfrieren` : ''}`;
+  return short ? `${main}. Dir fehlen ${short}.` : `${main}.`;
 }
 
 const placeOf = (meal) => (meal.storage === 'freezer' ? `Tiefkühler, am Vorabend auftauen` : 'Kühlschrank');
@@ -109,6 +116,7 @@ export function planView() {
                 .map((recipe) => recipe.name)
                 .join(', ')
             )}</p>
+            <p class="plain" id="boxLine">${esc(boxLine(plan, cook.date))}</p>
             <button type="button" class="primary" data-action="startCook" data-date="${cook.date}">Kochtag starten</button>
           </section>`
         : ''
@@ -116,7 +124,7 @@ export function planView() {
     <div class="list" id="weekList">
       ${days
         .map((date) => {
-          const meals = plan.meals.filter((meal) => meal.date === date);
+          const meals = plan.meals.filter((meal) => meal.date === date && !meal.skipped);
           return `<div class="row stacked"><span>${esc(dayLabel(date))}</span>${meals
             .map(
               (meal) =>
@@ -144,28 +152,6 @@ export function planView() {
     ${fridgeBlock()}
     <button type="button" class="secondary" data-action="newWeek"${planning.busy ? ' disabled' : ''}>Neue Woche planen</button>
     ${best ? `<button type="button" class="secondary" data-action="repeatWeek">Beste Woche wiederholen</button>` : ''}`;
-}
-
-// A photo is sent small: it costs less and shows enough.
-function shrink(file) {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    const url = URL.createObjectURL(file);
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('photo'));
-    };
-    image.onload = () => {
-      const scale = Math.min(1, PHOTO_SIZE / Math.max(image.width, image.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(image.width * scale);
-      canvas.height = Math.round(image.height * scale);
-      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
-    };
-    image.src = url;
-  });
 }
 
 export async function readFridgePhoto(file) {
