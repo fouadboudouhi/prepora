@@ -1,0 +1,38 @@
+// The first impression of someone's taste. Every answer teaches the app about one kind of food, not only one dish.
+export const DISHES = [
+  { name: 'Chili con Carne', kind: 'Eintopf', facts: 'Friert gut ein, viel Eiweiß', tag: 'Eintöpfe' },
+  { name: 'Hähnchen-Reis-Bowl', kind: 'Bowl', facts: 'Schnell gemacht, vielseitig', tag: 'Hähnchen' },
+  { name: 'Linsen-Dal', kind: 'Curry', facts: 'Vegetarisch, friert gut ein', tag: 'Hülsenfrüchte' },
+  { name: 'Lachs mit Ofengemüse', kind: 'Ofen', facts: 'Am besten in den ersten zwei Tagen', tag: 'Fisch' },
+  { name: 'Pasta mit Putenbolognese', kind: 'Nudeln', facts: 'Sauce friert gut ein', tag: 'Nudeln' },
+  { name: 'Rindergulasch', kind: 'Schmorgericht', facts: 'Wird aufgewärmt noch besser', tag: 'Rind' },
+  { name: 'Thai-Curry mit Pute', kind: 'Curry', facts: 'Mit Kokosmilch und Gemüse', tag: 'Asiatisch' },
+  { name: 'Kichererbsen-Tomaten-Eintopf', kind: 'Eintopf', facts: 'Vegan, günstig', tag: 'Vegetarisch' },
+  { name: 'Hackbällchen mit Kartoffeln', kind: 'Hausmannskost', facts: 'Sattmacher', tag: 'Hausmannskost' },
+  { name: 'Burrito-Bowl', kind: 'Bowl', facts: 'Bohnen, Mais, Reis, Hack', tag: 'Mexikanisch' },
+  { name: 'Teriyaki-Hähnchen mit Brokkoli', kind: 'Asiatisch', facts: 'Süß-salzig', tag: 'Asiatisch' },
+  {
+    name: 'Couscous-Salat mit Feta',
+    kind: 'Kalt',
+    facts: 'Muss nicht aufgewärmt werden',
+    tag: 'Kalte Gerichte',
+  },
+  { name: 'Süßkartoffel-Curry', kind: 'Curry', facts: 'Mild und cremig', tag: 'Currys' },
+  { name: 'Ofen-Hähnchen mit Paprika', kind: 'Ofen', facts: 'Wenig Arbeit', tag: 'Ofengerichte' },
+  {
+    name: 'Overnight Oats mit Skyr',
+    kind: 'Frühstück',
+    facts: 'Abends fertig, viel Eiweiß',
+    tag: 'Süßes Frühstück',
+  },
+  {
+    name: 'Eiermuffins mit Gemüse',
+    kind: 'Frühstück',
+    facts: 'Herzhaft, lässt sich mitnehmen',
+    tag: 'Herzhaftes Frühstück',
+  },
+  { name: 'Tofu mit Erdnusssauce', kind: 'Asiatisch', facts: 'Vegan, viel Eiweiß', tag: 'Tofu' },
+  { name: 'Griechische Hack-Pfanne', kind: 'Pfanne', facts: 'Mit Feta und Gemüse', tag: 'Mediterran' },
+  { name: 'Kartoffel-Gemüse-Auflauf', kind: 'Ofen', facts: 'Vegetarisch, mit Käse', tag: 'Aufläufe' },
+  { name: 'Scharfe Garnelen-Pasta', kind: 'Nudeln', facts: 'Scharf, Meeresfrüchte', tag: 'Scharfes Essen' },
+];

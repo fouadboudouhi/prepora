@@ -8,7 +8,7 @@
     "check": "node --experimental-vm-modules --no-warnings tests/check.mjs",
     "format": "prettier --write \"src/**/*.js\" \"tests/**/*.{js,mjs}\" \"tools/**/*.js\" sw.js styles.css",
     "lint": "prettier --check \"src/**/*.js\" \"tests/**/*.{js,mjs}\" \"tools/**/*.js\" sw.js styles.css",
-    "test": "npm run lint && npm run check && node --test tests/smoke.test.js"
+    "test": "npm run lint && npm run check && node --no-warnings --test tests/unit.test.mjs tests/smoke.test.js"
   },
   "devDependencies": {
     "axe-core": "^4.13.0",

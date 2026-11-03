@@ -1,6 +1,5 @@
 // The Volumora account also opens Prepora: same server, same name and password, and through it the same Claude key.
-// The key stays on the server. Prepora only asks who is signed in and talks to Claude; it never touches /v1/snapshot,
-// which holds the person's Volumora data.
+// The key stays on the server. Prepora's own data has its own place there; the Volumora data is only ever read.
 const KEY = 'prepora-session';
 const SIGNED_OUT = 'prepora-signed-out';
 // Volumora shares this domain, so a browser signed in there can use that sign-in here. An app installed on an iPhone
@@ -9,9 +8,11 @@ const VOLUMORA_KEY = 'volumora-sync';
 export const SERVER_URL = 'https://raspberrypi.tail9d7f95.ts.net';
 
 export class SessionError extends Error {
-  constructor(code) {
+  constructor(code, detail = '', latest = '') {
     super(code);
     this.code = code;
+    this.detail = detail;
+    this.latest = latest;
   }
 }
 
@@ -56,7 +57,8 @@ function forget() {
   }
 }
 
-async function call(path, options = {}, token = getSession()?.token) {
+// Answers with the response when it is usable. A 404 counts: it is how the server says "nothing stored yet".
+export async function call(path, options = {}, token = getSession()?.token) {
   let response;
   try {
     response = await fetch(`${SERVER_URL}${path}`, {
@@ -70,9 +72,13 @@ async function call(path, options = {}, token = getSession()?.token) {
   } catch {
     throw new SessionError('network');
   }
-  if (response.ok) return response;
+  if (response.ok || response.status === 404) return response;
+  const answer = await response.json().catch(() => ({}));
+  const detail = answer?.error?.message ?? (typeof answer?.error === 'string' ? answer.error : '');
   throw new SessionError(
-    { 401: 'user', 402: 'budget', 429: 'blocked', 503: 'noai' }[response.status] ?? 'server'
+    { 401: 'user', 402: 'budget', 412: 'newer', 429: 'blocked', 503: 'noai' }[response.status] ?? 'server',
+    detail,
+    answer?.latest ?? ''
   );
 }
 
