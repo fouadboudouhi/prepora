@@ -406,6 +406,14 @@ test('the profile saves every answer, shows the targets and survives a reload', 
   await page.locator('.pill', { hasText: 'Keiner' }).click();
   await page.fill('[name="avoid"]', 'Pilze <b>');
   assert.match(await page.locator('#targets').innerText(), /ca\. 3\.\d{3} kcal, 160 g Eiweiß am Tag/);
+  // Each choice says what it does, and the full breakdown is one tap away.
+  assert.match(await page.locator('#goalHint').innerText(), /300 kcal über/);
+  assert.match(await page.locator('#activityHint').innerText(), /zwei- bis fünfmal/);
+  await page.locator('.pill', { hasText: 'Definition' }).click();
+  assert.match(await page.locator('#goalHint').innerText(), /300 kcal unter/);
+  await page.locator('.pill', { hasText: 'Muskelaufbau' }).click();
+  await page.locator('summary', { hasText: 'Welche Stufe passt' }).click();
+  assert.match(await page.locator('.guide table').innerText(), /Sitzend[\s\S]*Wenig\s+Mittel\s+Viel/);
 
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
   assert.equal(saved.goal, 'muscle');
