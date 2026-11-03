@@ -374,14 +374,15 @@ test('Volumora data becomes weight and activity', () => {
   assert.equal(found.weight, 82);
   assert.equal(found.sessionsPerWeek, 3);
   assert.equal(activityFor(found.sessionsPerWeek), 'medium');
-  assert.equal(activityFor(5), 'high');
+  assert.equal(activityFor(5), 'medium', 'training five times a week beside a desk job');
+  assert.equal(activityFor(6), 'high');
   assert.equal(activityFor(0), 'low');
   assert.equal(activityFor(null), null);
   assert.equal(readVolumora(undefined, now).weight, null);
 });
 
 test('Volumora does not overwrite a newer entry or a chosen activity', () => {
-  const found = { weight: 82, weightAt: 1000, sessionsPerWeek: 5 };
+  const found = { weight: 82, weightAt: 1000, sessionsPerWeek: 6 };
   assert.deepEqual(mergeVolumora({ weight: null, activity: '' }, found), {
     weight: 82,
     weightAt: 1000,

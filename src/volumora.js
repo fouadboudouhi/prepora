@@ -26,7 +26,8 @@ export function readVolumora(backup, now = Date.now()) {
 
 export function activityFor(sessionsPerWeek) {
   if (sessionsPerWeek === null) return null;
-  if (sessionsPerWeek >= 4) return 'high';
+  // The usual scale: a desk job with training three to five times a week is still medium.
+  if (sessionsPerWeek >= 6) return 'high';
   if (sessionsPerWeek >= 2) return 'medium';
   return 'low';
 }
