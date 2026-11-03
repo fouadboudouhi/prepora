@@ -1,6 +1,7 @@
 // Heute: what to eat now and the one thing to do next. Eating is one tap; rating it is a second, optional one.
 import { addExtra, eat, getExtras, getPlan, getSupplements, rate, saveSupplements, skip } from './actions.js';
 import { dailyTargets, GOALS } from './nutrition.js';
+import { icon } from './icons.js';
 import { getProfile } from './profile.js';
 import { localDay, mealName, mealNutrition, recipeOf } from './planner.js';
 import { targetText } from './profileView.js';
@@ -94,7 +95,7 @@ function supplementBlock(today) {
     </section>`;
 }
 
-const photoButton = `<label class="secondary as-button" id="dishPhotoLabel">Essen fotografieren<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>`;
+const photoButton = `<label class="secondary as-button" id="dishPhotoLabel">${icon('camera')}Essen fotografieren<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>`;
 
 export function todayView() {
   const profile = getProfile();
@@ -107,8 +108,8 @@ export function todayView() {
         <button type="button" class="primary" data-tab="profile">Profil ausfüllen</button>
       </div>`;
   const goalRow = `
-    <button type="button" class="row" data-tab="profile" id="todayTargets">
-      <span>${esc(GOALS[profile.goal].label)}</span><span class="muted">${esc(targetText(targets))}</span>
+    <button type="button" class="row go" data-tab="profile" id="todayTargets">
+      <span class="grow"><span class="block">${esc(GOALS[profile.goal].label)}</span><span class="muted small">${esc(targetText(targets))}</span></span>
     </button>`;
   const plan = getPlan();
   if (!plan)
@@ -183,7 +184,7 @@ export function todayView() {
         .join('')}
       ${
         upcoming
-          ? `<button type="button" class="row" data-tab="plan"><span>Nächster Kochtag</span><span class="muted">${esc(dayLabel(upcoming.date))}, etwa ${upcoming.minutes} Min.</span></button>`
+          ? `<button type="button" class="row go" data-tab="plan"><span>Nächster Kochtag</span><span class="muted">${esc(dayLabel(upcoming.date))}, etwa ${upcoming.minutes} Min.</span></button>`
           : ''
       }
       ${goalRow}

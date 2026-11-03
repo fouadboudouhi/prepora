@@ -704,6 +704,9 @@ test('switches between the four tabs without errors', async () => {
     assert.equal(await page.locator('h1').innerText(), title);
     assert.equal(await page.locator('[aria-current="page"]').getAttribute('data-tab'), tab);
   }
+  // Each tab shows a drawn icon over its name; the name alone is what a screen reader hears.
+  assert.equal(await page.locator('.tabs button svg[aria-hidden="true"]').count(), 4);
+  assert.deepEqual(await page.locator('.tabs button').allInnerTexts(), ['Heute', 'Plan', 'Einkauf', 'Mehr']);
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -838,6 +841,7 @@ test('the list has everything for the week in one shop', async () => {
   const list = await page.locator('.page').innerText();
   assert.match(list, /Alles für die ganze Woche, Einkauf/);
   assert.match(list, /Geschätzt ca\. \d+ €/);
+  assert.doesNotMatch(await page.locator('#shopFor').innerText(), /\.\./, 'the date ends the sentence');
   assert.match(list, /Skyr/);
   assert.match(list, /Prüfen, ob da/);
   assert.match(list, /Kreatin/);
