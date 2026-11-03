@@ -4,7 +4,7 @@ Einmal kochen, die ganze Woche essen. Prepora ist eine installierbare Web-App (P
 
 Live: https://fouad-boudouhi.de/prepora/
 
-Noch im Aufbau, der Stand steht in [PLAN.md](PLAN.md).
+Was die App kann und warum, steht in [PLAN.md](PLAN.md).
 
 ## Lokal starten
 

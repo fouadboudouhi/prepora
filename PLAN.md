@@ -30,8 +30,8 @@ Prepora geht vom **Kochtag** aus, nicht vom einzelnen Rezept. Aus Ziel, Geschmac
 ## Technik
 
 - **App:** JavaScript ohne Build-Schritt, GitHub Pages unter `fouad-boudouhi.de/prepora/`. Volumora liegt auf derselben Domain, darum beginnen alle Speicher- und Cache-Namen mit `prepora-`.
-- **Server:** Der Volumora-Server auf dem Raspberry Pi (`sync-server/` im Volumora-Repo) stellt Konten und KI-Weiterleitung mit Monatsbudget. Ein Konto, ein Claude-Schlüssel. Der Server lässt Anfragen von der ganzen Domain zu, dafür war keine Änderung nötig. Im selben Browser übernimmt Prepora die Volumora-Anmeldung automatisch. Auf dem iPhone hat jede installierte Web-App ihren eigenen Speicher, dort meldest du dich einmal an; die Volumora-Daten kommen später über den Server.
-- **Nötige Server-Änderung:** `/v1/snapshot` kennt pro Konto genau einen Datenstand. Prepora bekommt einen eigenen Platz, sobald es Daten zum Abgleichen gibt; ein Test beweist, dass Volumora-Daten unberührt bleiben. Bis dahin ruft Prepora `/v1/snapshot` nie auf.
+- **Server:** Der Volumora-Server auf dem Raspberry Pi (`sync-server/` im Volumora-Repo) stellt Konten und KI-Weiterleitung mit Monatsbudget. Ein Konto, ein Claude-Schlüssel. Der Server lässt Anfragen von der ganzen Domain zu, dafür war keine Änderung nötig. Im selben Browser übernimmt Prepora die Volumora-Anmeldung automatisch. Auf dem iPhone hat jede installierte Web-App ihren eigenen Speicher, dort meldest du dich einmal an; die Volumora-Daten kommen über den Server.
+- **Nötige Server-Änderung:** `/v1/snapshot` kennt pro Konto genau einen Datenstand. Prepora hat deshalb einen eigenen Platz unter `/v1/apps/prepora/snapshot`. Die Volumora-Daten liest es nur, ein Test sichert das ab.
 - **Datenhaltung:** Alles liegt zuerst auf dem Gerät. Gespeicherte Pläne und der Kochmodus funktionieren auch, wenn der Pi aus ist.
 - **KI:** Claude über die Weiterleitung, Pläne als festes JSON-Format, das die App vor dem Speichern prüft. Geschätzte Kosten: 10–30 Cent pro Wochenplan (aus den Preisen gerechnet, noch nicht gemessen).
 - **Grenzen auf dem iPhone:** Web-Apps können nicht vibrieren und laufen bei gesperrtem Bildschirm nicht weiter. Timer speichern deshalb ihre Endzeit und gehen nie falsch; der Alarm im Hintergrund kommt per Push vom Pi. Bildschirm-Anhalten und Push müssen auf dem echten iPhone getestet werden.
@@ -44,17 +44,17 @@ Ablauf: Branch, Pull Request, grüne Tests, Merge. Merge heißt live.
 | --- | --- | --- |
 | M0 | Grundgerüst, Tests, GitHub Pages | fertig |
 | M1 | Orange als Farbe, Anmeldung mit dem Volumora-Konto, Claude über den Server | fertig |
-| M2 | Server: eigener Datenplatz; Abgleich in der App | offen |
+| M2 | Server: eigener Datenplatz; Abgleich in der App | fertig |
 | M3 | Profil und Ziele mit Kalorien- und Eiweißziel | fertig |
-| M4 | Rezepte und Nährwert-Tabelle | offen |
-| M5 | KI-Wochenplan mit Haltbarkeitsprüfung, Tauschen, Woche wiederholen | offen |
-| M6 | Einkaufsliste | offen |
-| M7 | Kochmodus mit Timern und Helfer | offen |
-| M8 | Heute und Tiefkühl-Vorrat | offen |
-| M9 | Geschmack lernen | offen |
-| M10 | Volumora-Verbindung | offen |
-| M11 | Kühlschrank-Foto | offen |
-| M12 | Push: Timer-Alarm und Auftau-Erinnerung | offen |
+| M4 | Rezepte und Nährwert-Tabelle | fertig |
+| M5 | KI-Wochenplan mit Haltbarkeitsprüfung, Tauschen, Woche wiederholen | fertig |
+| M6 | Einkaufsliste | fertig |
+| M7 | Kochmodus mit Timern und Helfer | fertig |
+| M8 | Heute und Tiefkühl-Vorrat | fertig |
+| M9 | Geschmack lernen | fertig |
+| M10 | Volumora-Verbindung | fertig |
+| M11 | Kühlschrank-Foto | fertig |
+| M12 | Push: Timer-Alarm und Auftau-Erinnerung | fertig |
 
 ## Ideen für später
 

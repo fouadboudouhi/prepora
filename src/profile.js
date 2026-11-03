@@ -1,5 +1,5 @@
-// What the person tells the app about themselves. It stays on this device until Prepora has its own place on the server.
-const KEY = 'prepora-profile';
+// What the person tells the app about themselves.
+import { read, write } from './store.js';
 
 export const DIETS = ['Vegetarisch', 'Vegan', 'Kein Schwein', 'Laktosefrei', 'Glutenfrei', 'Ohne Nüsse'];
 export const MEALS = ['Frühstück', 'Mittagessen', 'Abendessen'];
@@ -14,6 +14,8 @@ const DEFAULTS = {
   activity: '',
   people: 1,
   cookDays: 1,
+  cookWeekday: 0,
+  eatDays: 7,
   cookMinutes: 90,
   meals: ['Mittagessen', 'Abendessen'],
   freezer: true,
@@ -22,18 +24,5 @@ const DEFAULTS = {
   devices: ['Herd', 'Ofen', 'Mikrowelle'],
 };
 
-export function getProfile() {
-  try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY)) };
-  } catch {
-    return { ...DEFAULTS };
-  }
-}
-
-export function saveProfile(profile) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(profile));
-  } catch {
-    // A full storage keeps the answers on screen; the next change tries again.
-  }
-}
+export const getProfile = () => ({ ...DEFAULTS, ...read('profile', {}) });
+export const saveProfile = (profile) => write('profile', profile);

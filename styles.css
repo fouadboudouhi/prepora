@@ -352,3 +352,279 @@ button.row {
 .field textarea:focus {
   outline: 2px solid var(--accent);
 }
+
+.page .sub {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.page h2.section,
+h2.section {
+  margin: 26px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: 20px;
+}
+.hero h2 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.15;
+}
+.hero .primary,
+.hero .three {
+  margin-top: 8px;
+}
+.page .plain {
+  color: var(--ink);
+  font-size: 13px;
+}
+.eyebrow {
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.three button {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 14px;
+}
+.rating {
+  margin-top: 16px;
+}
+.rating p {
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-weight: 700;
+}
+.day-line {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 22px;
+}
+.day-line strong {
+  font-size: 17px;
+}
+.day-line .muted {
+  font-size: 12px;
+}
+.bar {
+  display: block;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.bar > span {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.row.stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.row.stacked .muted {
+  text-align: left;
+  font-size: 13px;
+}
+.muted.done {
+  text-decoration: line-through;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.block {
+  display: block;
+}
+.small {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.text-button {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chip {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chip.warm {
+  color: var(--accent-ink);
+}
+.fridge {
+  margin-top: 12px;
+}
+.as-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.round {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+.count {
+  min-width: 24px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.inline-form {
+  margin-top: 12px;
+}
+.inline-form input,
+.helper input {
+  height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+}
+.check.on .block {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.ring {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+}
+.check.on .ring {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.cook {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding-bottom: 32px;
+}
+.cook-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cook-top .muted {
+  font-size: 13px;
+  font-weight: 700;
+}
+.icon {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 22px;
+  cursor: pointer;
+}
+.icon:disabled {
+  opacity: 0.4;
+}
+.bar.wide {
+  margin: 14px 0 22px;
+}
+.step {
+  flex-grow: 1;
+}
+.step .eyebrow {
+  font-size: 13px;
+}
+.step h1 {
+  margin: 8px 0 10px;
+  font-size: 30px;
+  line-height: 1.18;
+}
+.step p {
+  font-size: 16px;
+}
+.step details {
+  margin-top: 16px;
+  color: var(--muted);
+}
+.step summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--accent-ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+.step ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.helper {
+  margin-top: 16px;
+}
+.page .answer {
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 15px;
+}
+.time {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.time.over {
+  color: var(--accent-ink);
+}
+.cook-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 8px;
+  margin-top: 16px;
+}
+.cook-actions button {
+  margin: 0;
+  min-height: 52px;
+  border-radius: 26px;
+}
+.cook > .primary {
+  margin-top: 16px;
+}

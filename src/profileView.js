@@ -2,8 +2,7 @@
 import { ACTIVITY, GOALS, dailyTargets } from './nutrition.js';
 import { DEVICES, DIETS, MEALS, getProfile, saveProfile } from './profile.js';
 
-const esc = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const number = (value) => value.toLocaleString('de-DE');
+import { esc, number } from './ui.js';
 
 export function targetText(targets) {
   return `ca. ${number(targets.kcal)} kcal, ${number(targets.protein)} g Eiweiß am Tag`;
@@ -49,6 +48,7 @@ export function profileView() {
           ${field('height', 'Größe', profile.height, 'cm')}
           ${field('weight', 'Gewicht', profile.weight, 'kg')}
         </div>
+        ${profile.weightFrom === 'volumora' ? '<p class="caption">Gewicht kommt aus Volumora</p>' : ''}
         <p class="caption">Für die Kalorienformel</p>
         ${pills(
           'sex',
@@ -75,6 +75,25 @@ export function profileView() {
             [2, 'Zwei'],
           ],
           profile.cookDays
+        )}
+        <p class="caption">Erster Kochtag</p>
+        ${pills(
+          'cookWeekday',
+          [
+            [6, 'Sa'],
+            [0, 'So'],
+            [1, 'Mo'],
+          ],
+          profile.cookWeekday
+        )}
+        <p class="caption">Gegessen wird an</p>
+        ${pills(
+          'eatDays',
+          [
+            [5, '5 Tagen'],
+            [7, '7 Tagen'],
+          ],
+          profile.eatDays
         )}
         <p class="caption">Zeit pro Kochtag</p>
         ${pills(
@@ -115,19 +134,27 @@ export function profileView() {
     </form>`;
 }
 
-function readForm(form) {
+function readForm(form, before) {
   const data = new FormData(form);
   const numeric = (name) => {
     const text = String(data.get(name) ?? '').trim();
     return text === '' ? null : Number(text);
   };
+  const weight = numeric('weight');
+  const activity = data.get('activity') ?? '';
   return {
+    ...before,
+    // Typed in by hand it counts as new, until Volumora has something newer.
+    ...(weight !== before.weight ? { weightAt: Date.now(), weightFrom: '' } : {}),
+    ...(activity !== before.activity ? { activityFrom: '' } : {}),
     goal: data.get('goal') ?? '',
     sex: data.get('sex') ?? '',
     age: numeric('age'),
     height: numeric('height'),
-    weight: numeric('weight'),
-    activity: data.get('activity') ?? '',
+    weight,
+    activity,
+    cookWeekday: numeric('cookWeekday') ?? 0,
+    eatDays: numeric('eatDays') ?? 7,
     people: numeric('people') ?? 1,
     cookDays: numeric('cookDays') ?? 1,
     cookMinutes: numeric('cookMinutes') ?? 90,
@@ -149,6 +176,6 @@ export function showTargets() {
 }
 
 export function saveFromForm(form) {
-  saveProfile(readForm(form));
+  saveProfile(readForm(form, getProfile()));
   showTargets();
 }
