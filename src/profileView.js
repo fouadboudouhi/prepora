@@ -11,6 +11,69 @@ export function targetText(targets) {
   return `ca. ${number(targets.kcal)} kcal, ${number(targets.protein)} g Eiweiß am Tag`;
 }
 
+// What a choice does, shown under the choice and updated with every tap.
+const GOAL_EFFECT = {
+  muscle: '300 kcal über deinem Verbrauch. Erwartet: etwa 1 kg mehr im Monat.',
+  lose: '500 kcal unter deinem Verbrauch. Erwartet: etwa 2 kg weniger im Monat.',
+  cut: '300 kcal unter deinem Verbrauch und etwas mehr Eiweiß. Erwartet: etwa 1,2 kg weniger im Monat.',
+  keep: 'So viel, wie du verbrauchst. Dein Gewicht bleibt etwa gleich.',
+  endurance: 'So viel, wie du verbrauchst. Claude weiß, dass du Ausdauersport machst, und plant danach.',
+};
+const GOAL_FOR = {
+  muscle:
+    'Du trainierst Kraft mindestens dreimal pro Woche und willst sichtbar mehr Muskeln. Ein Teil der Zunahme ist Fett. Passt am besten, wenn du eher schlank bist.',
+  lose: 'Du willst vor allem Gewicht verlieren und hast deutlich Übergewicht. Training ist kein Muss, hilft aber, die Muskeln zu halten.',
+  cut: 'Du trainierst Kraft und willst Fett verlieren, ohne Muskeln zu verlieren. Passt, wenn du nicht mehr weit von deinem Wunschgewicht weg bist.',
+  keep: 'Nach einer Diät, oder wenn du trainierst und langsam zugleich Fett ab- und Muskeln aufbauen willst. Das klappt vor allem bei Einsteigern und nach einer Pause gut.',
+  endurance:
+    'Du machst vor allem Laufen, Radfahren, Schwimmen oder Ähnliches und willst dein Gewicht halten.',
+};
+const ACTIVITY_FOR = {
+  low: 'Sitzender Alltag und höchstens einmal Training pro Woche.',
+  medium:
+    'Sitzender Alltag und zwei- bis fünfmal Training pro Woche, oder viel auf den Beinen ohne Training.',
+  high: 'Körperlich schwere Arbeit, auf den Beinen und dazu Training, oder fast täglich hartes Training.',
+};
+// Rows: the working day. Columns: trainings a week of about 45 to 90 minutes.
+const ACTIVITY_TABLE = [
+  ['Sitzend: Büro, Homeoffice, Studium, Auto', 'low', 'medium', 'high'],
+  ['Viel auf den Beinen: Verkauf, Pflege, Gastro, Kita', 'medium', 'high', 'high'],
+  ['Körperlich schwer: Bau, Handwerk, Lager', 'high', 'high', 'high'],
+];
+
+const goalGuide = `
+  <details class="guide">
+    <summary>Welches Ziel passt zu mir?</summary>
+    <div>
+      <dl>${Object.entries(GOALS)
+        .map(([key, goal]) => `<dt>${goal.label}</dt><dd>${GOAL_FOR[key]}</dd>`)
+        .join('')}</dl>
+      <p>Unsicher? Stört dich Fett am Bauch, nimm Definition, bei viel Übergewicht Abnehmen. Bist du eher schlank und willst größer werden, nimm Muskelaufbau. Liegst du dazwischen, nimm Gewicht halten.</p>
+    </div>
+  </details>`;
+const activityGuide = `
+  <details class="guide">
+    <summary>Welche Stufe passt zu mir?</summary>
+    <div>
+      <table>
+        <thead><tr><th scope="col">Dein Alltag</th><th scope="col">0–1× Training</th><th scope="col">2–5×</th><th scope="col">6–7×</th></tr></thead>
+        <tbody>${ACTIVITY_TABLE.map(
+          ([day, ...levels]) =>
+            `<tr><th scope="row">${day}</th>${levels.map((level) => `<td>${ACTIVITY[level].label}</td>`).join('')}</tr>`
+        ).join('')}</tbody>
+      </table>
+      <p>Training heißt: etwa 45 bis 90 Minuten Kraft- oder Ausdauersport. Spaziergänge zählen nicht. Gehst du jeden Tag mehr als 10.000 Schritte, etwa mit dem Rad zur Arbeit, nimm eine Stufe höher.</p>
+      <p>Im Zweifel die niedrigere Stufe. Den Verbrauch schätzen die meisten zu hoch ein, und nach zwei Wochen mit Gewicht passt Prepora das Ziel an deinen echten Verlauf an.</p>
+    </div>
+  </details>`;
+
+function showHints(profile) {
+  const goal = document.getElementById('goalHint');
+  if (goal) goal.textContent = GOAL_EFFECT[profile.goal] ?? '';
+  const activity = document.getElementById('activityHint');
+  if (activity) activity.textContent = ACTIVITY_FOR[profile.activity] ?? '';
+}
+
 const NOTES = {
   floor: 'Das ist deine Untergrenze. Weniger plant Prepora nicht.',
   underweight: 'Dein Gewicht liegt im Untergewicht. Prepora plant deshalb kein Kaloriendefizit.',
@@ -61,6 +124,8 @@ export function profileView() {
           Object.entries(GOALS).map(([value, goal]) => [value, goal.label]),
           profile.goal
         )}
+        <p class="note" id="goalHint">${GOAL_EFFECT[profile.goal] ?? ''}</p>
+        ${goalGuide}
       </fieldset>
       <fieldset><legend>Dein Körper</legend>
         <div class="fields">
@@ -85,7 +150,8 @@ export function profileView() {
           Object.entries(ACTIVITY).map(([value, level]) => [value, level.label]),
           profile.activity
         )}
-        <p class="note">Mittel heißt: Bürojob und zwei- bis fünfmal Training pro Woche. Viel nur bei körperlicher Arbeit oder fast täglich hartem Training.</p>
+        <p class="note" id="activityHint">${ACTIVITY_FOR[profile.activity] ?? ''}</p>
+        ${activityGuide}
       </fieldset>
       <fieldset><legend>Dein Kochen</legend>
         <p class="caption">Kochtage pro Woche</p>
@@ -228,6 +294,7 @@ export function showTargets() {
 export function saveFromForm(form) {
   saveProfile(readForm(form, getProfile()));
   showTargets();
+  showHints(getProfile());
 }
 
 export const profileActions = {

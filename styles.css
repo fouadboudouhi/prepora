@@ -811,3 +811,77 @@ label.row:active {
       0 6px 20px rgb(0 0 0 / 0.04);
   }
 }
+
+/* "Welches Ziel passt?": the full breakdown, one tap away */
+.guide {
+  margin-top: 4px;
+}
+.guide summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent-ink);
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+.guide summary::-webkit-details-marker {
+  display: none;
+}
+.guide summary::after {
+  content: '';
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  background: currentColor;
+  -webkit-mask: var(--chevron) center / contain no-repeat;
+  mask: var(--chevron) center / contain no-repeat;
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+}
+.guide[open] summary::after {
+  transform: rotate(-90deg);
+}
+.guide > div {
+  padding: 4px 16px 16px;
+  border-radius: 16px;
+  background: var(--surface);
+  font-size: 13.5px;
+}
+.guide dl {
+  margin: 0;
+}
+.guide dt {
+  margin-top: 12px;
+  font-weight: 700;
+}
+.guide dd {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+.guide > div > p {
+  margin-top: 12px;
+}
+.guide table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+}
+.guide th,
+.guide td {
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.guide thead th {
+  color: var(--muted);
+  font-size: 12px;
+}
+.guide tbody th {
+  font-weight: 500;
+}
+.guide td {
+  font-weight: 700;
+}
