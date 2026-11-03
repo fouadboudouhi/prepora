@@ -85,6 +85,7 @@ export function profileView() {
           Object.entries(ACTIVITY).map(([value, level]) => [value, level.label]),
           profile.activity
         )}
+        <p class="note">Mittel heißt: Bürojob und zwei- bis fünfmal Training pro Woche. Viel nur bei körperlicher Arbeit oder fast täglich hartem Training.</p>
       </fieldset>
       <fieldset><legend>Dein Kochen</legend>
         <p class="caption">Kochtage pro Woche</p>
