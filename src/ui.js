@@ -20,6 +20,9 @@ const ERRORS = {
   norecipe: 'Daraus ließ sich kein Rezept lesen.',
   nowish: 'Schreib erst kurz, was du erreichen willst.',
   server: 'Beim Server ist etwas schiefgelaufen.',
+  interrupted: 'Die App wurde geschlossen, bevor die Antwort kam. Deine Nachricht steht wieder im Feld.',
+  stale: 'Das geht nicht mehr zurück, weil sich seitdem etwas geändert hat.',
+  aborted: 'Angehalten.',
 };
 export const errorText = (err) => {
   const text = ERRORS[err?.code] ?? ERRORS.server;

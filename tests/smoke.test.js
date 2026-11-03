@@ -122,6 +122,59 @@ const streamOf = (text) =>
     '',
   ].join('\n');
 
+// The assistant in the chat: thinks, calls tools, and answers once their results are back.
+function agentReply(asked) {
+  const last = asked.messages.at(-1);
+  if (Array.isArray(last.content))
+    return [{ type: 'text', text: 'Fertig: **neuer Plan** mit\n- Chili\n- Curry' }];
+  if (last.content.includes('Party'))
+    return [
+      { type: 'tool_use', id: 'tu-look', name: 'get_overview', input: {} },
+      { type: 'tool_use', id: 'tu-bad', name: 'update_profile', input: { changes: { goal: 'party' } } },
+    ];
+  if (last.content.includes('Plan'))
+    return [
+      { type: 'thinking', thinking: 'Erst Profil, dann Plan.', signature: 'sig-1' },
+      { type: 'text', text: 'Mache ich, das dauert ein bis zwei Minuten.' },
+      { type: 'tool_use', id: 'tu-1', name: 'update_profile', input: { changes: { cookMinutes: 60 } } },
+      { type: 'tool_use', id: 'tu-2', name: 'create_plan', input: { wish: 'mehr Hähnchen' } },
+    ];
+  return [{ type: 'text', text: 'Hallo!' }];
+}
+const agentStream = (blocks) =>
+  [
+    { type: 'message_start', message: {} },
+    ...blocks.flatMap((block, index) => {
+      const start = { type: 'content_block_start', index };
+      const delta = (value) => ({ type: 'content_block_delta', index, delta: value });
+      const stop = { type: 'content_block_stop', index };
+      if (block.type === 'thinking')
+        return [
+          { ...start, content_block: { type: 'thinking', thinking: '' } },
+          delta({ type: 'thinking_delta', thinking: block.thinking }),
+          delta({ type: 'signature_delta', signature: block.signature }),
+          stop,
+        ];
+      if (block.type === 'tool_use')
+        return [
+          { ...start, content_block: { type: 'tool_use', id: block.id, name: block.name, input: {} } },
+          delta({ type: 'input_json_delta', partial_json: JSON.stringify(block.input) }),
+          stop,
+        ];
+      return [
+        { ...start, content_block: { type: 'text', text: '' } },
+        delta({ type: 'text_delta', text: block.text }),
+        stop,
+      ];
+    }),
+    {
+      type: 'message_delta',
+      delta: { stop_reason: blocks.some((block) => block.type === 'tool_use') ? 'tool_use' : 'end_turn' },
+    },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}`)
+    .join('\n') + '\n';
+
 async function open({
   colorScheme = 'light',
   storage = {},
@@ -164,6 +217,12 @@ async function open({
     if (path === '/v1/ai/messages') {
       if (claude !== 200) return reply(claude, { error: 'budget' });
       const asked = JSON.parse(request.postData());
+      if (asked.tools?.some((tool) => tool.name === 'get_overview'))
+        return route.fulfill({
+          status: 200,
+          headers: { ...cors, 'content-type': 'text/event-stream' },
+          body: agentStream(agentReply(asked)),
+        });
       const isPlan = asked.output_config?.format?.schema?.required?.includes('assignments');
       const required = asked.output_config?.format?.schema?.required ?? [];
       const isPhoto = required.includes('items');
@@ -761,12 +820,13 @@ test('the freezer can be kept by hand', async () => {
   await context.close();
 });
 
-test('switches between the four tabs without errors', async () => {
+test('switches between the five tabs without errors', async () => {
   const { context, page, errors } = await open({ storage: signedIn });
   assert.equal(await page.locator('h1').innerText(), 'Heute');
   for (const [tab, title] of [
     ['plan', 'Wochenplan'],
     ['shop', 'Einkauf'],
+    ['chat', 'Claude'],
     ['more', 'Mehr'],
     ['today', 'Heute'],
   ]) {
@@ -775,8 +835,14 @@ test('switches between the four tabs without errors', async () => {
     assert.equal(await page.locator('[aria-current="page"]').getAttribute('data-tab'), tab);
   }
   // Each tab shows a drawn icon over its name; the name alone is what a screen reader hears.
-  assert.equal(await page.locator('.tabs button svg[aria-hidden="true"]').count(), 4);
-  assert.deepEqual(await page.locator('.tabs button').allInnerTexts(), ['Heute', 'Plan', 'Einkauf', 'Mehr']);
+  assert.equal(await page.locator('.tabs button svg[aria-hidden="true"]').count(), 5);
+  assert.deepEqual(await page.locator('.tabs button').allInnerTexts(), [
+    'Heute',
+    'Plan',
+    'Einkauf',
+    'Claude',
+    'Mehr',
+  ]);
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -813,6 +879,8 @@ for (const colorScheme of ['light', 'dark']) {
     await more.page.click('#openProfile');
     await more.page.selectOption('[name="goal"]', 'lose');
     await more.page.locator('summary', { hasText: 'Geräte' }).click();
+    assert.deepEqual(await check(more.page), []);
+    await more.page.click('nav [data-tab="chat"]');
     assert.deepEqual(await check(more.page), []);
     await more.page.click('[data-tab="more"]');
     await more.page.click('#openTaste');
@@ -1017,5 +1085,90 @@ test('fixed times are set in the profile, a second cook day only shows when chos
   assert.equal(saved.cookTime, '09:30');
   assert.equal(saved.shopTime, '18:15');
   assert.equal(saved.shopWeekday, 5);
+  await context.close();
+});
+
+const agentCalls = (calls) =>
+  calls
+    .filter((call) => call.path === '/v1/ai/messages')
+    .map((call) => JSON.parse(call.body))
+    .filter((body) => body.tools?.some((tool) => tool.name === 'get_overview'));
+const withHealth = { ...signedIn, 'prepora-profile': { ...person, health: 'Nimmt Blutverdünner' } };
+
+test('Claude in the chat changes the profile and makes the plan, and one tap takes both back', async () => {
+  const { context, page, calls, errors } = await open({ storage: withHealth });
+  await page.click('nav [data-tab="chat"]');
+  assert.equal(await page.locator('h1').innerText(), 'Claude');
+  assert.equal(await page.locator('.starter').count(), 4);
+  await page.fill('[name="message"]', 'Mach mir einen Plan mit mehr Hähnchen, nur 60 Minuten');
+  await page.press('[name="message"]', 'Enter');
+  await page.waitForSelector('.chat-change');
+
+  const answer = await page.locator('.bubble').last().innerText();
+  assert.match(answer, /Mache ich[\s\S]*Fertig: neuer Plan/);
+  assert.equal(await page.locator('.bubble li').count(), 2);
+  assert.match(await page.locator('.chat-change').innerText(), /Geändert: Profil, Wochenplan/);
+  const stored = () =>
+    page.evaluate(() => ({
+      profile: JSON.parse(localStorage.getItem('prepora-profile')),
+      plan: JSON.parse(localStorage.getItem('prepora-plan')),
+    }));
+  let saved = await stored();
+  assert.equal(saved.profile.cookMinutes, 60);
+  assert.ok(saved.plan.meals.length);
+
+  // Within a turn the thinking goes back exactly as it came, and every tool call gets its result.
+  const turns = agentCalls(calls);
+  assert.equal(turns.length, 2);
+  assert.deepEqual(turns[1].messages.at(-2).content[0], {
+    type: 'thinking',
+    thinking: 'Erst Profil, dann Plan.',
+    signature: 'sig-1',
+  });
+  assert.deepEqual(
+    turns[1].messages.at(-1).content.map((result) => result.tool_use_id),
+    ['tu-1', 'tu-2']
+  );
+  const planCall = calls
+    .filter((call) => call.path === '/v1/ai/messages')
+    .find((call) => call.body.includes('assignments'));
+  assert.match(planCall.body, /mehr Hähnchen/);
+
+  await page.click('[data-action="chatUndo"]');
+  assert.match(await page.locator('.chat-change').innerText(), /Zurückgenommen/);
+  saved = await stored();
+  assert.equal(saved.profile.cookMinutes, undefined);
+  assert.equal(saved.plan, null);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('the chat checks what Claude asks for and never shows it the health note', async () => {
+  const { context, page, calls } = await open({ storage: withHealth });
+  await page.click('nav [data-tab="chat"]');
+  await page.fill('[name="message"]', 'Setz mein Ziel auf Party');
+  await page.click('#chatForm [type="submit"]');
+  await page.waitForSelector('.bubble li');
+  assert.equal(await page.locator('.chat-change').count(), 0);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
+  assert.equal(saved.goal, 'muscle');
+  const [looked, refused] = agentCalls(calls)[1].messages.at(-1).content;
+  assert.equal(looked.is_error, undefined);
+  assert.match(looked.content, /"goal":"muscle"/);
+  assert.equal(refused.is_error, true);
+  assert.match(refused.content, /Ungültiger Wert für goal/);
+  assert.ok(agentCalls(calls).every((body) => !JSON.stringify(body).includes('Blutverdünner')));
+  await context.close();
+});
+
+test('when Claude cannot answer, the message goes back into the field', async () => {
+  const { context, page } = await open({ storage: ready, claude: 402 });
+  await page.click('nav [data-tab="chat"]');
+  await page.fill('[name="message"]', 'Hallo');
+  await page.press('[name="message"]', 'Enter');
+  await page.waitForSelector('.note.error');
+  assert.match(await page.locator('.note.error').innerText(), /Budget/);
+  assert.equal(await page.locator('[name="message"]').inputValue(), 'Hallo');
+  assert.equal(await page.locator('.bubble').count(), 0);
   await context.close();
 });
