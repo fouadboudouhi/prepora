@@ -1,6 +1,7 @@
 // Weight and training from Volumora flow into the targets. Only ever a read: Prepora never writes to that data.
 import { call } from './session.js';
 import { getProfile, saveProfile } from './profile.js';
+import { mergeWeights } from './trend.js';
 
 const DAY = 86400000;
 const WEEKS = 4;
@@ -18,6 +19,7 @@ export function readVolumora(backup, now = Date.now()) {
   return {
     weight: weights.at(-1)?.weight ?? null,
     weightAt: weights.at(-1)?.at ?? 0,
+    weights,
     sessionsPerWeek: backup?.history ? sessions / WEEKS : null,
   };
 }
@@ -37,6 +39,11 @@ export function mergeVolumora(profile, found) {
     next.weight = found.weight;
     next.weightAt = found.weightAt;
     next.weightFrom = 'volumora';
+    changed = true;
+  }
+  const merged = mergeWeights(profile.weights, found.weights);
+  if (merged) {
+    next.weights = merged;
     changed = true;
   }
   const activity = activityFor(found.sessionsPerWeek);

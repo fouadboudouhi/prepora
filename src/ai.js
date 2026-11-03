@@ -36,7 +36,7 @@ async function readStream(response) {
   return { text, stop };
 }
 
-export async function askClaude({ messages, system, maxTokens = 8000, effort = 'low', format }) {
+export async function askClaude({ messages, system, maxTokens = 8000, effort = 'low', format, tools }) {
   const response = await aiCall(
     {
       model: MODEL,
@@ -45,6 +45,7 @@ export async function askClaude({ messages, system, maxTokens = 8000, effort = '
       output_config: { effort, ...(format ? { format: { type: 'json_schema', schema: format } } : {}) },
       fallbacks: 'default',
       ...(system ? { system } : {}),
+      ...(tools ? { tools } : {}),
       messages,
     },
     { 'anthropic-beta': 'server-side-fallback-2026-07-01' }
@@ -52,6 +53,7 @@ export async function askClaude({ messages, system, maxTokens = 8000, effort = '
   const { text, stop } = await readStream(response);
   if (stop === 'refusal') throw new SessionError('refused');
   if (stop === 'max_tokens') throw new SessionError('toolong');
+  if (stop === 'pause_turn') throw new SessionError('server', 'Die Antwort wurde unterbrochen.');
   if (!text) throw new SessionError('server');
   return text;
 }

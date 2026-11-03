@@ -19,7 +19,14 @@ Prepora geht vom **Kochtag** aus, nicht vom einzelnen Rezept. Aus Ziel, Geschmac
 | Vorrat | Tiefkühler mit Datum, der nächste Plan verbraucht ihn zuerst |
 | Kühlschrank-Foto | Die KI erkennt, was noch da ist, und plant damit |
 | Volumora | Gewicht und Training fließen in Kalorien und Eiweiß ein |
-| Push | Timer-Alarm bei gesperrtem iPhone, Erinnerung ans Auftauen am Vorabend |
+| Push und Zeiten | Feste Koch- und Einkaufszeiten mit Erinnerung und als Kalendereintrag, Timer-Alarm bei gesperrtem iPhone, Erinnerung ans Auftauen am Vorabend |
+| Heute nicht | Ein Tipp: Die Box wandert in den Tiefkühler oder auf morgen, je nachdem, was sicher ist |
+| Lücke im Tag | Bausteine ohne Kochen für den Rest des Tagesziels, ihre Zutaten stehen auf der Einkaufsliste |
+| Echter Verlauf | Alle zwei Wochen passt die App das Kalorienziel an die echte Gewichtskurve an, in kleinen Schritten |
+| Foto vom Gericht | Erst das Gericht erkennen, dann eine Kalorien-Spanne. Keine Zahl, wenn es nur geraten wäre |
+| Supplements | Eigene Liste zum Abhaken, Claude beurteilt, was sich lohnt und was nicht |
+| Eigene Rezepte | Aus Link, Foto oder Text, ein Tipp nimmt sie in die nächste Woche |
+| Abwechslung und Budget | Kleine Varianten beim Aufwärmen, geschätzte Kosten, optionales Wochenbudget, Boxen-Check |
 
 ## Regeln im Plan
 
@@ -55,10 +62,9 @@ Ablauf: Branch, Pull Request, grüne Tests, Merge. Merge heißt live.
 | M10 | Volumora-Verbindung | fertig |
 | M11 | Kühlschrank-Foto | fertig |
 | M12 | Push: Timer-Alarm und Auftau-Erinnerung | fertig |
+| M13 | Heute nicht, Lücke im Tag, Echter Verlauf, Foto vom Gericht, Supplements, Eigene Rezepte, feste Zeiten, Einkauf für die ganze Woche, Budget, Boxen-Check | fertig |
 
 ## Ideen für später
 
-- Wochenbudget: geschätzte Kosten pro Plan, günstigere Varianten
-- Eigene Rezepte aus Link oder Foto übernehmen
 - Sprachbefehl „weiter“ im Kochmodus für nasse Hände (Sprache lief in Volumora auf dem iPhone unzuverlässig, vorher testen)
 - Saisonale Zutaten bevorzugen

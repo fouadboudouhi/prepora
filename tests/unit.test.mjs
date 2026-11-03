@@ -1,9 +1,12 @@
 // The daily targets, without a browser. Run with `npm test`.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { calendarText } from '../src/calendar.js';
+import { assessDish } from '../src/dish.js';
 import { nutritionOf } from '../src/foods.js';
 import { GOALS, dailyTargets } from '../src/nutrition.js';
 import {
+  boxCheck,
   boxLabels,
   buildSlots,
   cookDates,
@@ -11,9 +14,13 @@ import {
   nextStart,
   placeStock,
   repeatPlan,
+  shopDate,
+  shoppingCost,
   shoppingList,
+  skipMeal,
 } from '../src/planner.js';
-import { planAlarms } from '../src/push.js';
+import { blockAlarms, planAlarms } from '../src/push.js';
+import { addWeight, mergeWeights, nextAdjustment, weeklyChange } from '../src/trend.js';
 import { activityFor, mergeVolumora, readVolumora } from '../src/volumora.js';
 
 const person = { goal: 'keep', sex: 'male', age: 30, height: 180, weight: 80, activity: 'medium' };
@@ -267,7 +274,7 @@ test('the shopping list adds up the same food, in whole packs, and says what sta
   });
   assert.deepEqual(
     groups.map((group) => group.name),
-    ['Fleisch und Fisch', 'Vorrat']
+    ['Fleisch und Fisch', 'Vorrat', 'Prüfen, ob da']
   );
   const [hack] = groups[0].items;
   assert.equal(hack.detail, '2 Packungen à 500 g, 300 g bleiben übrig');
@@ -335,14 +342,13 @@ test('a repeated week has new dates, nothing eaten and no cost', () => {
   assert.equal(next.cookDays[0].date, '2026-11-15');
 });
 
-test('reminders cover thawing and cook days, never the past', () => {
+test('reminders cover thawing, never the past', () => {
   const slots = buildSlots(profile, START);
   const { plan } = finishPlan(
     answer(() => 'a'),
     { profile, slots, start: START }
   );
   const alarms = planAlarms(plan, () => 'Eintopf', Date.parse('2026-11-01T00:00:00'));
-  assert.ok(alarms.some((alarm) => alarm.id === `cook-${START}`));
   const thaw = alarms.filter((alarm) => alarm.id.startsWith('thaw-'));
   assert.equal(thaw.length, 6);
   assert.match(thaw[0].body, /Eintopf/);
@@ -388,4 +394,254 @@ test('Volumora does not overwrite a newer entry or a chosen activity', () => {
     mergeVolumora({ weight: 82, weightAt: 1000, activity: 'high', activityFrom: 'volumora' }, found),
     null
   );
+});
+
+const DAY_MS = 86400000;
+const NOW = Date.parse('2026-11-03T12:00:00Z');
+const curve = (perWeek, days = 21) =>
+  Array.from({ length: days / 3 + 1 }, (_, index) => ({
+    at: NOW - days * DAY_MS + index * 3 * DAY_MS,
+    weight: 80 + (perWeek / 7) * index * 3,
+  }));
+
+test('weight trend: a straight line in kilograms per week, not from too little data', () => {
+  assert.ok(Math.abs(weeklyChange(curve(0.5), NOW) - 0.5) < 0.001);
+  assert.equal(weeklyChange(curve(0.5).slice(-2), NOW), null, 'two entries say nothing');
+  assert.equal(weeklyChange(curve(0.5, 9), NOW), null, 'nine days say nothing');
+});
+
+test('weight entries: one per day, the last word counts, nonsense stays out', () => {
+  let list = addWeight([], 8, NOW);
+  assert.deepEqual(list, []);
+  list = addWeight(list, 80, NOW);
+  list = addWeight(list, 80.5, NOW + 1000);
+  assert.deepEqual(list, [{ at: NOW + 1000, weight: 80.5 }]);
+  assert.equal(mergeWeights(list, []), null);
+  assert.equal(mergeWeights(list, [{ at: NOW, weight: 90 }]), null, 'the same day is not news');
+  assert.equal(mergeWeights(list, [{ at: NOW - DAY_MS, weight: 79 }]).length, 2);
+});
+
+test('the target follows the real curve: small steps, seldom, inside the limits', () => {
+  const base = { goal: 'muscle', weights: curve(0), kcalAdjust: 0 };
+  const change = nextAdjustment(base, NOW);
+  // Expected +0.25 kg, actual 0: about 275 kcal short, one step is at most 200.
+  assert.equal(change.kcalAdjust, 200);
+  assert.match(change.adjustNote, /\+200 kcal/);
+
+  assert.equal(nextAdjustment({ ...base, adjustAt: NOW - 3 * DAY_MS }, NOW), null, 'not again so soon');
+  assert.equal(nextAdjustment({ ...base, weights: curve(0.25) }, NOW), null, 'the curve fits');
+  assert.equal(nextAdjustment({ ...base, weights: [] }, NOW), null);
+  assert.equal(nextAdjustment({ ...base, kcalAdjust: 500 }, NOW), null, 'never past the total limit');
+
+  const dieting = nextAdjustment({ goal: 'lose', weights: curve(-1.2) }, NOW);
+  assert.ok(dieting.kcalAdjust > 0, 'losing too fast means more food');
+});
+
+test('an adjustment cannot push a diet through the floor', () => {
+  const small = { goal: 'lose', sex: 'female', age: 30, height: 160, weight: 52, activity: 'low' };
+  assert.equal(dailyTargets({ ...small, kcalAdjust: -500 }).kcal, 1250);
+  assert.equal(dailyTargets({ ...small, kcalAdjust: -500 }).limited, 'floor');
+  const plain = dailyTargets(person).kcal;
+  assert.equal(dailyTargets({ ...person, kcalAdjust: 200 }).kcal, plain + 200);
+  const thin = { goal: 'lose', sex: 'male', age: 30, height: 180, weight: 58, activity: 'medium' };
+  assert.equal(dailyTargets({ ...thin, kcalAdjust: -300 }).kcal, dailyTargets(thin).kcal);
+});
+
+test('a dish photo only gives a number when it is worth one', () => {
+  const dish = {
+    isFood: true,
+    dish: 'Lasagne',
+    confidence: 'mittel',
+    reason: '',
+    portion: 'normal',
+    kcalLow: 604,
+    kcalHigh: 796,
+    protein: 30.4,
+    components: ['Nudeln'],
+  };
+  assert.deepEqual(assessDish(dish), {
+    kind: 'estimate',
+    dish: 'Lasagne',
+    low: 600,
+    high: 800,
+    middle: 700,
+    protein: 30,
+    confidence: 'mittel',
+    portion: 'normal',
+    components: ['Nudeln'],
+  });
+  assert.equal(assessDish({ ...dish, confidence: 'niedrig' }).kind, 'unsure');
+  assert.equal(
+    assessDish({ ...dish, kcalLow: 300, kcalHigh: 900 }).kind,
+    'unsure',
+    'too wide to be an estimate'
+  );
+  assert.equal(assessDish({ ...dish, kcalLow: 0 }).kind, 'unsure');
+  assert.equal(assessDish({ ...dish, kcalHigh: 100 }).kind, 'unsure');
+  assert.equal(assessDish({ ...dish, isFood: false }).kind, 'notfood');
+  assert.equal(assessDish(null).kind, 'notfood');
+});
+
+const skipPlan = (overrides = {}, mealOverrides = {}) => ({
+  people: 1,
+  recipes: [{ id: 'a', name: 'Chili', cookDate: '2026-11-08', fridgeDays: 4, freezes: true, ...overrides }],
+  meals: [
+    { id: 'm', date: '2026-11-10', meal: 'Mittagessen', recipeId: 'a', storage: 'fridge', ...mealOverrides },
+  ],
+  cookDays: [{ date: '2026-11-08', done: true }],
+});
+const on = { today: '2026-11-10', freezer: true };
+
+test('"Heute nicht": freezer when it freezes, tomorrow when it keeps, a clear word when neither', () => {
+  let plan = skipPlan();
+  assert.equal(skipMeal(plan, 'm', on).outcome, 'frozen');
+  assert.equal(plan.meals[0].skipped, true);
+
+  plan = skipPlan({ freezes: false });
+  assert.equal(skipMeal(plan, 'm', on).outcome, 'moved');
+  assert.equal(plan.meals[0].date, '2026-11-11');
+
+  plan = skipPlan({ freezes: false, fridgeDays: 2 });
+  assert.equal(skipMeal(plan, 'm', on).outcome, 'expired');
+  assert.equal(plan.meals[0].skipped, true);
+
+  plan = skipPlan();
+  assert.equal(skipMeal(plan, 'm', { ...on, freezer: false }).outcome, 'moved', 'no freezer at home');
+
+  plan = skipPlan();
+  plan.cookDays[0].done = false;
+  assert.equal(skipMeal(plan, 'm', on).outcome, 'dropped', 'not cooked yet');
+});
+
+test('"Heute nicht": a thawed box never goes back into the freezer and only moves once', () => {
+  const plan = skipPlan({}, { storage: 'freezer' });
+  assert.equal(skipMeal(plan, 'm', on).outcome, 'moved');
+  assert.equal(skipMeal(plan, 'm', { ...on, today: '2026-11-11' }).outcome, 'expired');
+});
+
+test('one shop a week: last shop day before cooking, with fillers, staples and supplements', () => {
+  assert.equal(shopDate({ shopWeekday: 6 }, START), '2026-11-07');
+  assert.equal(shopDate({ shopWeekday: 0 }, START), START, 'on the cook day itself');
+  const plan = {
+    recipes: [
+      {
+        name: 'A',
+        ingredients: [food('Salz', 'gewuerze', 5), { ...food('Reis', 'reis', 400, 1000), packEuro: 2 }],
+      },
+    ],
+    fillers: [
+      {
+        name: 'F',
+        ingredients: [
+          { ...food('Skyr', 'skyr', 1200, 500, 'Kühlregal'), packEuro: 1.5 },
+          { ...food('Banane', 'banane', 700), packEuro: 2 },
+        ],
+      },
+    ],
+  };
+  const groups = shoppingList(plan, [{ id: 'k', name: 'Kreatin' }]);
+  const names = groups.map((group) => group.name);
+  assert.deepEqual(names, ['Kühlregal', 'Vorrat', 'Prüfen, ob da', 'Supplements']);
+  assert.equal(groups[0].items[0].detail, '3 Packungen à 500 g, 300 g bleiben übrig');
+  assert.equal(groups[2].items[0].name, 'Salz');
+  assert.equal(groups[3].items[0].id, 'supplement-k');
+  assert.equal(shoppingCost(plan), Math.round(2 + 4.5 + 2));
+});
+
+test('the budget goes back to Claude only when it is clearly missed', () => {
+  const slots = buildSlots(profile, START);
+  const dear = answer(() => 'a', {
+    ingredients: [
+      { ...food('Hack', 'rinderhack_mager', 4000, 500), packEuro: 5 },
+      food('Reis', 'reis', 2400, 1000),
+    ],
+  });
+  const over = finishPlan(dear, { profile: { ...profile, budget: 20 }, slots, start: START });
+  assert.ok(over.plan.cost > 24);
+  assert.ok(over.problems.some((text) => text.includes('Budget')));
+  assert.deepEqual(
+    finishPlan(dear, { profile: { ...profile, budget: 500 }, slots, start: START }).problems,
+    []
+  );
+  assert.deepEqual(finishPlan(dear, { profile, slots, start: START }).problems, []);
+});
+
+test('each box of a dish gets its turn with a twist, and fillers get numbers per serving', () => {
+  const slots = buildSlots(profile, START);
+  const raw = answer(() => 'a', { twists: ['Mit Limette', 'Mit Joghurt'] });
+  raw.fillers = [
+    { id: 'f', name: 'Skyr', when: 'Frühstück', servings: 7, ingredients: [food('Skyr', 'skyr', 1400, 500)] },
+  ];
+  const { plan } = finishPlan(raw, { profile, slots, start: START });
+  assert.equal(plan.meals[0].twist, 'Mit Limette');
+  assert.equal(plan.meals[1].twist, 'Mit Joghurt');
+  assert.equal(plan.meals[2].twist, 'Mit Limette');
+  assert.deepEqual(plan.fillers[0].nutrition, { kcal: 130, protein: 22, fat: 0, carbs: 8 });
+});
+
+test('the boxes are counted before the cook day, and a shortage is named', () => {
+  const slots = buildSlots(profile, START);
+  const { plan } = finishPlan(
+    answer(() => 'a'),
+    { profile, slots, start: START }
+  );
+  assert.deepEqual(boxCheck(plan, START, 10), { total: 14, frozen: 6, short: 4 });
+  assert.equal(boxCheck(plan, START, null).short, 0);
+});
+
+test('a second cook day follows the chosen weekday', () => {
+  assert.deepEqual(cookDates({ cookDays: 2, cookWeekday2: 3 }, START), [START, '2026-11-11']);
+  assert.deepEqual(cookDates({ cookDays: 2, cookWeekday2: 0 }, START), [START, '2026-11-15']);
+});
+
+test('fixed times become reminders for the coming weeks, at the chosen time', () => {
+  const at = new Date('2026-11-03T12:00:00').getTime();
+  const alarms = blockAlarms(
+    {
+      cookDays: 2,
+      cookWeekday: 0,
+      cookTime: '09:30',
+      cookWeekday2: 3,
+      cookTime2: '18:00',
+      shopWeekday: 6,
+      shopTime: '17:00',
+    },
+    at
+  );
+  assert.ok(alarms.every((alarm) => alarm.at > at));
+  const first = alarms.find((alarm) => alarm.id === 'cook-2026-11-08');
+  assert.equal(first.at, new Date('2026-11-08T09:30:00').getTime());
+  assert.ok(alarms.some((alarm) => alarm.id === 'cook-2026-11-04'));
+  assert.ok(alarms.some((alarm) => alarm.id === 'shop-2026-11-07'));
+  assert.equal(new Set(alarms.map((alarm) => alarm.id)).size, alarms.length);
+  assert.ok(alarms.length <= 24);
+  const one = blockAlarms({ cookDays: 1, cookWeekday: 0, cookWeekday2: 3, shopWeekday: 6 }, at);
+  assert.equal(
+    one.some((alarm) => alarm.id === 'cook-2026-11-04'),
+    false
+  );
+});
+
+test('the calendar file blocks each time every week', () => {
+  const text = calendarText(
+    {
+      cookDays: 2,
+      cookWeekday: 0,
+      cookTime: '09:30',
+      cookWeekday2: 3,
+      cookTime2: '18:00',
+      shopWeekday: 6,
+      shopTime: '17:00',
+      cookMinutes: 90,
+    },
+    new Date('2026-11-03T12:00:00')
+  );
+  assert.equal(text.match(/BEGIN:VEVENT/g).length, 3);
+  assert.ok(text.includes('DTSTART:20261108T093000'));
+  assert.ok(text.includes('RRULE:FREQ=WEEKLY;BYDAY=SU'));
+  assert.ok(text.includes('DTSTART:20261104T180000'));
+  assert.ok(text.includes('DTSTART:20261107T170000'));
+  assert.ok(text.includes('DURATION:PT90M'));
+  assert.ok(text.includes('\r\n'));
+  assert.equal(calendarText({ cookDays: 1 }).match(/BEGIN:VEVENT/g).length, 2);
 });

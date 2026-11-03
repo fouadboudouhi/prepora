@@ -17,6 +17,7 @@ const ERRORS = {
   refused: 'Claude hat diese Anfrage abgelehnt.',
   toolong: 'Die Antwort wurde zu lang. Bitte nochmal versuchen.',
   badplan: 'Der Plan passte auch im zweiten Anlauf nicht.',
+  norecipe: 'Daraus ließ sich kein Rezept lesen.',
   server: 'Beim Server ist etwas schiefgelaufen.',
 };
 export const errorText = (err) => {
@@ -29,3 +30,9 @@ export const setRedraw = (fn) => {
   redraw = fn;
 };
 export const rerender = () => redraw();
+
+let opener = () => {};
+export const setOpener = (fn) => {
+  opener = fn;
+};
+export const openView = (id) => opener(id);
