@@ -1,11 +1,14 @@
 // The profile as one form that saves on every change, with the daily targets above it.
 import { ACTIVITY, GOALS, dailyTargets } from './nutrition.js';
 import { updateBlocks } from './actions.js';
+import { askClaudeJson } from './ai.js';
 import { shareCalendar } from './calendar.js';
+import { ADVICE_SCHEMA, ADVICE_SYSTEM, adviceRequest, validAdvice } from './goalAdvice.js';
 import { DEVICES, DIETS, MEALS, getProfile, saveProfile } from './profile.js';
 import { enablePush, pushOn, pushSupported } from './push.js';
+import { SessionError } from './session.js';
 import { addWeight } from './trend.js';
-import { esc, number, rerender } from './ui.js';
+import { errorText, esc, number, rerender } from './ui.js';
 
 export function targetText(targets) {
   return `ca. ${number(targets.kcal)} kcal, ${number(targets.protein)} g Eiweiß am Tag`;
@@ -74,6 +77,26 @@ function showHints(profile) {
   if (activity) activity.textContent = ACTIVITY_FOR[profile.activity] ?? '';
 }
 
+const advice = { busy: false, error: null, result: null };
+
+function adviceBlock(profile) {
+  if (advice.busy) return '<p class="note" role="status">Claude überlegt …</p>';
+  if (advice.error) return `<p class="note error" role="alert">${esc(errorText(advice.error))}</p>`;
+  const result = advice.result;
+  if (!result) return '';
+  const targets = dailyTargets({ ...profile, goal: result.goal, activity: result.activity });
+  const chosen = result.goal === profile.goal && result.activity === profile.activity;
+  return `
+    <section class="card" id="goalAdvice">
+      <span class="eyebrow">Claude empfiehlt</span>
+      <h2>${GOALS[result.goal].label}, Bewegung ${ACTIVITY[result.activity].label}</h2>
+      ${targets ? `<p class="plain">${targetText(targets)}</p>` : ''}
+      <p>${esc(result.reason)}</p>
+      ${result.assumption ? `<p class="small">${esc(result.assumption)} Stimmt das nicht, schreib es oben dazu und frag nochmal.</p>` : ''}
+      ${chosen ? '<p class="plain">Ist so eingestellt.</p>' : '<button type="button" class="primary" data-action="applyAdvice">Übernehmen</button>'}
+    </section>`;
+}
+
 const NOTES = {
   floor: 'Das ist deine Untergrenze. Weniger plant Prepora nicht.',
   underweight: 'Dein Gewicht liegt im Untergewicht. Prepora plant deshalb kein Kaloriendefizit.',
@@ -119,6 +142,12 @@ export function profileView() {
     <div class="target" id="targets" role="status"></div>
     <form id="profile" class="stack" novalidate>
       <fieldset><legend>Dein Ziel</legend>
+        <label class="field">Sag Claude, was du willst
+          <textarea name="goalText" rows="3" maxlength="600" placeholder="Zum Beispiel: Ich will etwas Bauch verlieren, sitze im Büro und trainiere dreimal die Woche.">${esc(profile.goalText)}</textarea>
+        </label>
+        <button type="button" class="secondary" data-action="adviseGoal"${advice.busy ? ' disabled' : ''}>Einstellung empfehlen lassen</button>
+        ${adviceBlock(profile)}
+        <p class="caption">Oder selbst wählen</p>
         ${pills(
           'goal',
           Object.entries(GOALS).map(([value, goal]) => [value, goal.label]),
@@ -254,6 +283,7 @@ function readForm(form, before) {
       : {}),
     ...(activity !== before.activity ? { activityFrom: '' } : {}),
     goal: data.get('goal') ?? '',
+    goalText: String(data.get('goalText') ?? '').trim(),
     sex: data.get('sex') ?? '',
     age: numeric('age'),
     height: numeric('height'),
@@ -298,6 +328,37 @@ export function saveFromForm(form) {
 }
 
 export const profileActions = {
+  adviseGoal: async () => {
+    document.activeElement?.blur?.();
+    const profile = getProfile();
+    advice.result = null;
+    advice.error = profile.goalText ? null : new SessionError('nowish');
+    if (advice.error) return rerender();
+    advice.busy = true;
+    rerender();
+    try {
+      const answer = await askClaudeJson({
+        system: ADVICE_SYSTEM,
+        format: ADVICE_SCHEMA,
+        effort: 'low',
+        maxTokens: 2000,
+        messages: [{ role: 'user', content: adviceRequest(profile.goalText, profile) }],
+      });
+      advice.result = validAdvice(answer);
+      if (!advice.result) throw new SessionError('server', 'Die Empfehlung passte zu keiner Einstellung.');
+    } catch (err) {
+      advice.error = err;
+    }
+    advice.busy = false;
+    rerender();
+  },
+  // Chosen by the person, so Volumora leaves the level alone from here on.
+  applyAdvice: () => {
+    if (!advice.result) return;
+    const { goal, activity } = advice.result;
+    saveProfile({ ...getProfile(), goal, activity, activityFrom: '' });
+    rerender();
+  },
   addCalendar: async () => {
     const note = document.getElementById('blockNote');
     const done = await shareCalendar(getProfile());

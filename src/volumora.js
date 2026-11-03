@@ -47,6 +47,11 @@ export function mergeVolumora(profile, found) {
     next.weights = merged;
     changed = true;
   }
+  // Kept so the goal advice knows how much is trained.
+  if (Number.isFinite(found.sessionsPerWeek) && found.sessionsPerWeek !== profile.trainingsPerWeek) {
+    next.trainingsPerWeek = found.sessionsPerWeek;
+    changed = true;
+  }
   const activity = activityFor(found.sessionsPerWeek);
   if (
     activity &&

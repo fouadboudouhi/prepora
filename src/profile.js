@@ -7,6 +7,7 @@ export const DEVICES = ['Herd', 'Ofen', 'Mikrowelle', 'Airfryer', 'Slow Cooker']
 
 const DEFAULTS = {
   goal: '',
+  goalText: '',
   sex: '',
   age: null,
   height: null,

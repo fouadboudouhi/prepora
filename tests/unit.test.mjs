@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { calendarText } from '../src/calendar.js';
 import { assessDish } from '../src/dish.js';
+import { adviceRequest, validAdvice } from '../src/goalAdvice.js';
 import { nutritionOf } from '../src/foods.js';
 import { GOALS, dailyTargets } from '../src/nutrition.js';
 import {
@@ -389,12 +390,49 @@ test('Volumora does not overwrite a newer entry or a chosen activity', () => {
     weightFrom: 'volumora',
     activity: 'high',
     activityFrom: 'volumora',
+    trainingsPerWeek: 6,
   });
-  assert.equal(mergeVolumora({ weight: 80, weightAt: 2000, activity: 'low' }, found), null);
   assert.equal(
-    mergeVolumora({ weight: 82, weightAt: 1000, activity: 'high', activityFrom: 'volumora' }, found),
+    mergeVolumora({ weight: 80, weightAt: 2000, activity: 'low', trainingsPerWeek: 6 }, found),
     null
   );
+  assert.equal(
+    mergeVolumora(
+      { weight: 82, weightAt: 1000, activity: 'high', activityFrom: 'volumora', trainingsPerWeek: 6 },
+      found
+    ),
+    null
+  );
+});
+
+test('the goal advice gets the wish, the body, the training and every possible target, never the health note', () => {
+  const profile = {
+    goal: 'muscle',
+    sex: 'male',
+    age: 31,
+    height: 184,
+    weight: 89,
+    activity: 'high',
+    trainingsPerWeek: 3,
+    health: 'Nimmt Blutverdünner',
+    weights: [],
+  };
+  const text = adviceRequest('Bauch weg, Muskeln behalten', profile);
+  assert.match(text, /^Was ich will: Bauch weg, Muskeln behalten/);
+  assert.match(text, /Alter 31, Größe 184 cm, Gewicht 89 kg, Geschlecht männlich, BMI 26,3/);
+  assert.match(text, /im Schnitt 3 pro Woche/);
+  assert.match(text, /Jetzt eingestellt: Muskelaufbau, Bewegung Viel/);
+  assert.match(
+    text,
+    /Muskelaufbau: Wenig 2\.950 kcal \/ 180 g Eiweiß, Mittel 3\.250 kcal \/ 180 g Eiweiß, Viel 3\.600 kcal/
+  );
+  assert.match(text, /Definition: Wenig 2\.350 kcal \/ 195 g Eiweiß/);
+  assert.doesNotMatch(text, /Blutverdünner/);
+  assert.match(adviceRequest('Abnehmen', { sex: '', weights: [] }), /noch keine Kalorien/);
+
+  assert.deepEqual(validAdvice({ goal: 'cut', activity: 'medium', reason: '', assumption: '' })?.goal, 'cut');
+  assert.equal(validAdvice({ goal: 'bulk', activity: 'medium' }), null);
+  assert.equal(validAdvice({ goal: 'cut', activity: 'extreme' }), null);
 });
 
 const DAY_MS = 86400000;
