@@ -427,7 +427,8 @@ test('Claude suggests goal and activity from a wish in own words, and one tap ta
   await page.click('[data-action="applyAdvice"]');
   assert.match(await page.locator('#goalAdvice').innerText(), /Ist so eingestellt/);
   assert.match(await page.locator('#targets').innerText(), /ca\. 2\.650 kcal/);
-  assert.equal(await page.locator('[name="goal"]:checked').getAttribute('value'), 'cut');
+  assert.equal(await page.locator('[name="goal"]').inputValue(), 'cut');
+  assert.equal(await page.locator('[name="activity"]').inputValue(), 'medium');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
   assert.equal(saved.goal, 'cut');
   assert.equal(saved.activity, 'medium');
@@ -443,25 +444,37 @@ test('the profile saves every answer, shows the targets and survives a reload', 
   assert.equal(await page.locator('h1').innerText(), 'Profil');
   assert.equal(await page.locator('[aria-current="page"]').getAttribute('data-tab'), 'more');
 
-  await page.locator('.pill', { hasText: 'Muskelaufbau' }).click();
+  // Nothing chosen yet reads as such, not as the first choice.
+  assert.equal(await page.locator('[name="goal"] option:checked').innerText(), 'Wählen');
+  await page.selectOption('[name="goal"]', 'muscle');
   await page.fill('[name="age"]', '30');
   await page.fill('[name="height"]', '180');
   await page.fill('[name="weight"]', '80');
-  await page.locator('.pill', { hasText: 'Männlich' }).click();
-  await page.locator('.pill', { hasText: 'Mittel' }).click();
-  await page.locator('.pill', { hasText: 'Zwei' }).click();
-  await page.locator('.pill', { hasText: 'Frühstück' }).click();
-  await page.locator('.pill', { hasText: 'Keiner' }).click();
+  await page.selectOption('[name="sex"]', 'male');
+  await page.selectOption('[name="activity"]', 'medium');
+  await page.selectOption('[name="cookDays"]', '2');
+  // Several answers stay folded into one row until opened, and the row says what is chosen.
+  assert.equal(await page.locator('label.row', { hasText: 'Frühstück' }).isVisible(), false);
+  await page.locator('summary', { hasText: 'Vorkochen für' }).click();
+  await page.locator('label.row', { hasText: 'Frühstück' }).click();
+  assert.equal(
+    await page.locator('[data-summary="meals"]').innerText(),
+    'Frühstück, Mittagessen, Abendessen'
+  );
+  await page.locator('label.row', { hasText: 'Tiefkühler' }).click();
   await page.fill('[name="avoid"]', 'Pilze <b>');
   assert.match(await page.locator('#targets').innerText(), /ca\. 3\.\d{3} kcal, 160 g Eiweiß am Tag/);
   // Each choice says what it does, and the full breakdown is one tap away.
   assert.match(await page.locator('#goalHint').innerText(), /300 kcal über/);
   assert.match(await page.locator('#activityHint').innerText(), /zwei- bis fünfmal/);
-  await page.locator('.pill', { hasText: 'Definition' }).click();
+  await page.selectOption('[name="goal"]', 'cut');
   assert.match(await page.locator('#goalHint').innerText(), /300 kcal unter/);
-  await page.locator('.pill', { hasText: 'Muskelaufbau' }).click();
-  await page.locator('summary', { hasText: 'Welche Stufe passt' }).click();
-  assert.match(await page.locator('.guide table').innerText(), /Sitzend[\s\S]*Wenig\s+Mittel\s+Viel/);
+  await page.selectOption('[name="goal"]', 'muscle');
+  await page.locator('summary', { hasText: 'Was passt zu mir' }).click();
+  assert.match(
+    await page.locator('.guide').innerText(),
+    /Definition[\s\S]*Sitzend[\s\S]*Wenig\s+Mittel\s+Viel/
+  );
 
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
   assert.equal(saved.goal, 'muscle');
@@ -475,7 +488,8 @@ test('the profile saves every answer, shows the targets and survives a reload', 
   await page.click('#todayTargets');
   assert.equal(await page.locator('[name="weight"]').inputValue(), '80');
   assert.equal(await page.locator('[name="avoid"]').inputValue(), 'Pilze <b>');
-  assert.ok(await page.locator('input[name="freezer"][value="no"]').isChecked());
+  assert.equal(await page.locator('[name="freezer"]').isChecked(), false);
+  assert.equal(await page.locator('[name="sex"]').inputValue(), 'male');
   await page.click('.back');
   assert.equal(await page.locator('h1').innerText(), 'Mehr');
   assert.deepEqual(errors, []);
@@ -797,7 +811,8 @@ for (const colorScheme of ['light', 'dark']) {
     await more.page.click('[data-tab="more"]');
     assert.deepEqual(await check(more.page), []);
     await more.page.click('#openProfile');
-    await more.page.locator('.pill', { hasText: 'Abnehmen' }).click();
+    await more.page.selectOption('[name="goal"]', 'lose');
+    await more.page.locator('summary', { hasText: 'Geräte' }).click();
     assert.deepEqual(await check(more.page), []);
     await more.page.click('[data-tab="more"]');
     await more.page.click('#openTaste');
@@ -991,12 +1006,12 @@ test('fixed times are set in the profile, a second cook day only shows when chos
   await page.click('[data-tab="more"]');
   await page.click('#openProfile');
   assert.equal(await page.locator('[name="cookTime2"]').count(), 0);
-  await page.locator('.pill', { hasText: 'Zwei' }).click();
+  await page.selectOption('[name="cookDays"]', '2');
   await page.waitForSelector('[name="cookTime2"]');
   await page.fill('[name="cookTime"]', '09:30');
   await page.fill('[name="shopTime"]', '18:15');
   await page.locator('h1').click();
-  await page.locator('input[name="shopWeekday"][value="5"]').evaluate((el) => el.click());
+  await page.selectOption('[name="shopWeekday"]', '5');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
   assert.equal(saved.cookDays, 2);
   assert.equal(saved.cookTime, '09:30');

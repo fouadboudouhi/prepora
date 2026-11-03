@@ -44,20 +44,16 @@ const ACTIVITY_TABLE = [
   ['Körperlich schwer: Bau, Handwerk, Lager', 'high', 'high', 'high'],
 ];
 
-const goalGuide = `
+const guide = `
   <details class="guide">
-    <summary>Welches Ziel passt zu mir?</summary>
+    <summary>Was passt zu mir?</summary>
     <div>
+      <h3>Ziel</h3>
       <dl>${Object.entries(GOALS)
         .map(([key, goal]) => `<dt>${goal.label}</dt><dd>${GOAL_FOR[key]}</dd>`)
         .join('')}</dl>
       <p>Unsicher? Stört dich Fett am Bauch, nimm Definition, bei viel Übergewicht Abnehmen. Bist du eher schlank und willst größer werden, nimm Muskelaufbau. Liegst du dazwischen, nimm Gewicht halten.</p>
-    </div>
-  </details>`;
-const activityGuide = `
-  <details class="guide">
-    <summary>Welche Stufe passt zu mir?</summary>
-    <div>
+      <h3>Bewegung</h3>
       <table>
         <thead><tr><th scope="col">Dein Alltag</th><th scope="col">0–1× Training</th><th scope="col">2–5×</th><th scope="col">6–7×</th></tr></thead>
         <tbody>${ACTIVITY_TABLE.map(
@@ -70,11 +66,16 @@ const activityGuide = `
     </div>
   </details>`;
 
+const listed = (values, none) => (values.length ? values.join(', ') : none);
+
 function showHints(profile) {
   const goal = document.getElementById('goalHint');
   if (goal) goal.textContent = GOAL_EFFECT[profile.goal] ?? '';
   const activity = document.getElementById('activityHint');
   if (activity) activity.textContent = ACTIVITY_FOR[profile.activity] ?? '';
+  document.querySelectorAll('[data-summary]').forEach((box) => {
+    box.textContent = listed(profile[box.dataset.summary], box.dataset.none);
+  });
 }
 
 const advice = { busy: false, error: null, result: null };
@@ -102,167 +103,172 @@ const NOTES = {
   underweight: 'Dein Gewicht liegt im Untergewicht. Prepora plant deshalb kein Kaloriendefizit.',
 };
 
-const pills = (name, options, selected, type = 'radio') => `
-  <div class="pills${options.length === 7 ? ' week' : ''}">
-    ${options
-      .map(([value, label]) => {
-        const on = type === 'radio' ? String(selected) === String(value) : selected.includes(value);
-        return `<label class="pill"><input type="${type}" name="${name}" value="${esc(value)}"${on ? ' checked' : ''}><span>${esc(label)}</span></label>`;
-      })
-      .join('')}
-  </div>`;
-const same = (values) => values.map((value) => [value, value]);
+const options = (list, selected) =>
+  list
+    .map(
+      ([value, label]) =>
+        `<option value="${esc(value)}"${String(selected) === String(value) ? ' selected' : ''}>${esc(label)}</option>`
+    )
+    .join('');
+// Nothing chosen yet shows as such, instead of the first choice looking taken.
+const orNone = (list, selected) => (selected ? list : [['', 'Wählen'], ...list]);
 const WEEK = [
-  [1, 'Mo'],
-  [2, 'Di'],
-  [3, 'Mi'],
-  [4, 'Do'],
-  [5, 'Fr'],
-  [6, 'Sa'],
-  [0, 'So'],
+  [1, 'Montag'],
+  [2, 'Dienstag'],
+  [3, 'Mittwoch'],
+  [4, 'Donnerstag'],
+  [5, 'Freitag'],
+  [6, 'Samstag'],
+  [0, 'Sonntag'],
 ];
-const timeField = (name, label, value) => `
-  <label class="field">${label}
-    <span class="with-unit"><input type="time" name="${name}" value="${esc(value)}"></span>
-  </label>`;
-const optionalNumber = (name, label, value, unit) => `
-  <label class="field">${label}
-    <span class="with-unit"><input type="number" inputmode="numeric" name="${name}" value="${value ?? ''}"><span class="muted">${unit}</span></span>
-  </label>`;
-const field = (name, label, value, unit) => `
-  <label class="field">${label}
-    <span class="with-unit"><input type="number" inputmode="numeric" name="${name}" value="${value ?? ''}"><span class="muted">${unit}</span></span>
+const SEXES = [
+  ['male', 'Männlich'],
+  ['female', 'Weiblich'],
+  ['', 'Keine Angabe'],
+];
+
+// One setting per row, like the phone's own settings: the name on the left, the answer on the right. A choice opens
+// the phone's own picker from anywhere in the row.
+const choice = (name, label, list, selected) => `
+  <label class="row choice"><span>${label}</span><select name="${name}">${options(list, selected)}</select></label>`;
+const amount = (name, label, value, unit) => `
+  <label class="row"><span>${label}</span><span class="entry"><input type="number" inputmode="numeric" name="${name}" value="${value ?? ''}" placeholder="–"><span>${unit}</span></span></label>`;
+const dayAndTime = (id, label, day, time, profile) => `
+  <div class="row"><span id="${id}">${label}</span><span class="when">
+    <span class="pick"><select name="${day}" aria-labelledby="${id}">${options(WEEK, profile[day])}</select></span>
+    <input type="time" name="${time}" value="${esc(profile[time])}" aria-label="${label}, Uhrzeit">
+  </span></div>`;
+const toggle = (name, label, on) => `
+  <label class="row"><span>${label}</span><input type="checkbox" class="switch" name="${name}" value="yes"${on ? ' checked' : ''}></label>`;
+// Several answers at once: closed it says what is chosen, open it has a tick per option.
+const several = (name, label, list, selected, none) => `
+  <details class="several">
+    <summary class="row"><span>${label}</span><span class="muted" data-summary="${name}" data-none="${none}">${esc(listed(selected, none))}</span></summary>
+    ${list
+      .map(
+        (value) =>
+          `<label class="row"><span>${esc(value)}</span><input type="checkbox" class="tick" name="${name}" value="${esc(value)}"${selected.includes(value) ? ' checked' : ''}></label>`
+      )
+      .join('')}
+  </details>`;
+const text = (name, label, value, rows, max, hint) => `
+  <label class="text-cell">${label}
+    <textarea name="${name}" rows="${rows}" maxlength="${max}" placeholder="${hint}">${esc(value)}</textarea>
   </label>`;
 
 export function profileView() {
   const profile = getProfile();
+  const two = profile.cookDays === 2;
   return `
     <button type="button" class="back" data-tab="more">Mehr</button>
     <h1>Profil</h1>
     <div class="target" id="targets" role="status"></div>
-    <form id="profile" class="stack" novalidate>
+    <form id="profile" class="settings" novalidate>
       <fieldset><legend>Dein Ziel</legend>
-        <label class="field">Sag Claude, was du willst
-          <textarea name="goalText" rows="3" maxlength="600" placeholder="Zum Beispiel: Ich will etwas Bauch verlieren, sitze im Büro und trainiere dreimal die Woche.">${esc(profile.goalText)}</textarea>
-        </label>
-        <button type="button" class="secondary" data-action="adviseGoal"${advice.busy ? ' disabled' : ''}>Einstellung empfehlen lassen</button>
+        <div class="list">
+          ${text('goalText', 'Sag Claude, was du willst', profile.goalText, 3, 600, 'Zum Beispiel: Ich will etwas Bauch verlieren, sitze im Büro und trainiere dreimal die Woche.')}
+          <button type="button" class="row link" data-action="adviseGoal"${advice.busy ? ' disabled' : ''}>Einstellung empfehlen lassen</button>
+        </div>
         ${adviceBlock(profile)}
-        <p class="caption">Oder selbst wählen</p>
-        ${pills(
-          'goal',
-          Object.entries(GOALS).map(([value, goal]) => [value, goal.label]),
-          profile.goal
-        )}
-        <p class="note" id="goalHint">${GOAL_EFFECT[profile.goal] ?? ''}</p>
-        ${goalGuide}
+        <div class="list">
+          ${choice(
+            'goal',
+            'Ziel',
+            orNone(
+              Object.entries(GOALS).map(([value, goal]) => [value, goal.label]),
+              profile.goal
+            ),
+            profile.goal
+          )}
+          ${choice(
+            'activity',
+            'Bewegung',
+            orNone(
+              Object.entries(ACTIVITY).map(([value, level]) => [value, level.label]),
+              profile.activity
+            ),
+            profile.activity
+          )}
+        </div>
+        <p class="foot" id="goalHint">${GOAL_EFFECT[profile.goal] ?? ''}</p>
+        <p class="foot" id="activityHint">${ACTIVITY_FOR[profile.activity] ?? ''}</p>
+        ${guide}
       </fieldset>
       <fieldset><legend>Dein Körper</legend>
-        <div class="fields">
-          ${field('age', 'Alter', profile.age, 'Jahre')}
-          ${field('height', 'Größe', profile.height, 'cm')}
-          ${field('weight', 'Gewicht', profile.weight, 'kg')}
+        <div class="list">
+          ${choice('sex', 'Geschlecht', SEXES, profile.sex)}
+          ${amount('age', 'Alter', profile.age, 'Jahre')}
+          ${amount('height', 'Größe', profile.height, 'cm')}
+          ${amount('weight', 'Gewicht', profile.weight, 'kg')}
         </div>
-        ${profile.weightFrom === 'volumora' ? '<p class="caption">Gewicht kommt aus Volumora</p>' : ''}
-        <p class="caption">Für die Kalorienformel</p>
-        ${pills(
-          'sex',
-          [
-            ['male', 'Männlich'],
-            ['female', 'Weiblich'],
-            ['', 'Keine Angabe'],
-          ],
-          profile.sex
-        )}
-        <p class="caption">Bewegung inklusive Training</p>
-        ${pills(
-          'activity',
-          Object.entries(ACTIVITY).map(([value, level]) => [value, level.label]),
-          profile.activity
-        )}
-        <p class="note" id="activityHint">${ACTIVITY_FOR[profile.activity] ?? ''}</p>
-        ${activityGuide}
+        <p class="foot">${profile.weightFrom === 'volumora' ? 'Das Gewicht kommt aus Volumora. ' : ''}Für die Kalorienformel.</p>
       </fieldset>
-      <fieldset><legend>Dein Kochen</legend>
-        <p class="caption">Kochtage pro Woche</p>
-        ${pills(
-          'cookDays',
-          [
-            [1, 'Einer'],
-            [2, 'Zwei'],
-          ],
-          profile.cookDays
-        )}
-        <p class="caption">${profile.cookDays === 2 ? 'Erster Kochtag' : 'Kochtag'}</p>
-        ${pills('cookWeekday', WEEK, profile.cookWeekday)}
-        ${timeField('cookTime', 'Um', profile.cookTime)}
-        ${
-          profile.cookDays === 2
-            ? `<p class="caption">Zweiter Kochtag</p>
-               ${pills('cookWeekday2', WEEK, profile.cookWeekday2)}
-               ${timeField('cookTime2', 'Um', profile.cookTime2)}`
-            : ''
-        }
-        <p class="caption">Einkauf, einmal pro Woche</p>
-        ${pills('shopWeekday', WEEK, profile.shopWeekday)}
-        ${timeField('shopTime', 'Um', profile.shopTime)}
-        <button type="button" class="secondary" data-action="addCalendar">In den Kalender eintragen</button>
-        ${
-          pushSupported() && !pushOn()
-            ? '<button type="button" class="secondary" data-action="enableReminders">Erinnerungen einschalten</button>'
-            : ''
-        }
-        <p class="note" id="blockNote" role="status"></p>
-        <p class="caption">Gegessen wird an</p>
-        ${pills(
-          'eatDays',
-          [
-            [5, '5 Tagen'],
-            [7, '7 Tagen'],
-          ],
-          profile.eatDays
-        )}
-        <p class="caption">Zeit pro Kochtag</p>
-        ${pills(
-          'cookMinutes',
-          [
-            [60, '60 Min.'],
-            [90, '90 Min.'],
-            [120, '120 Min.'],
-          ],
-          profile.cookMinutes
-        )}
-        <p class="caption">Personen</p>
-        ${pills(
-          'people',
-          [1, 2, 3, 4].map((value) => [value, String(value)]),
-          profile.people
-        )}
-        <p class="caption">Vorkochen für</p>
-        ${pills('meals', same(MEALS), profile.meals, 'checkbox')}
-        <p class="caption">Tiefkühler</p>
-        ${pills(
-          'freezer',
-          [
-            ['yes', 'Vorhanden'],
-            ['no', 'Keiner'],
-          ],
-          profile.freezer ? 'yes' : 'no'
-        )}
-        <p class="caption">Geräte</p>
-        ${pills('devices', same(DEVICES), profile.devices, 'checkbox')}
-        <div class="fields two">
-          ${optionalNumber('boxes', 'Boxen zu Hause', profile.boxes, 'Stück')}
-          ${optionalNumber('budget', 'Einkauf pro Woche', profile.budget, '€')}
+      <fieldset><legend>Kochen und Einkauf</legend>
+        <div class="list">
+          ${choice(
+            'cookDays',
+            'Kochtage pro Woche',
+            [
+              [1, 'Einer'],
+              [2, 'Zwei'],
+            ],
+            profile.cookDays
+          )}
+          ${dayAndTime('cookDayLabel', two ? 'Erster Kochtag' : 'Kochtag', 'cookWeekday', 'cookTime', profile)}
+          ${two ? dayAndTime('cookDay2Label', 'Zweiter Kochtag', 'cookWeekday2', 'cookTime2', profile) : ''}
+          ${dayAndTime('shopDayLabel', 'Einkauf', 'shopWeekday', 'shopTime', profile)}
+          ${choice(
+            'cookMinutes',
+            'Zeit pro Kochtag',
+            [
+              [60, '60 Min.'],
+              [90, '90 Min.'],
+              [120, '120 Min.'],
+            ],
+            profile.cookMinutes
+          )}
+          ${several('meals', 'Vorkochen für', MEALS, profile.meals, 'Nichts')}
+          ${choice(
+            'eatDays',
+            'Gegessen wird an',
+            [
+              [5, '5 Tagen'],
+              [7, '7 Tagen'],
+            ],
+            profile.eatDays
+          )}
+          ${choice(
+            'people',
+            'Personen',
+            [1, 2, 3, 4].map((value) => [value, String(value)]),
+            profile.people
+          )}
+        </div>
+        <div class="list">
+          <button type="button" class="row link" data-action="addCalendar">In den Kalender eintragen</button>
+          ${
+            pushSupported() && !pushOn()
+              ? '<button type="button" class="row link" data-action="enableReminders">Erinnerungen einschalten</button>'
+              : ''
+          }
+        </div>
+        <p class="foot" id="blockNote" role="status"></p>
+      </fieldset>
+      <fieldset><legend>Deine Küche</legend>
+        <div class="list">
+          ${toggle('freezer', 'Tiefkühler', profile.freezer)}
+          ${several('devices', 'Geräte', DEVICES, profile.devices, 'Keine')}
+          ${amount('boxes', 'Boxen zu Hause', profile.boxes, 'Stück')}
+          ${amount('budget', 'Einkauf pro Woche', profile.budget, '€')}
         </div>
       </fieldset>
       <fieldset><legend>Dein Essen</legend>
-        ${pills('diet', same(DIETS), profile.diet, 'checkbox')}
-        <label class="field">Das magst du nicht oder verträgst es nicht
-          <textarea name="avoid" rows="2" maxlength="300">${esc(profile.avoid)}</textarea>
-        </label>
-        <label class="field">Medikamente oder Erkrankungen, nur für die Supplement-Beratung und freiwillig
-          <textarea name="health" rows="2" maxlength="300">${esc(profile.health)}</textarea>
-        </label>
+        <div class="list">
+          ${several('diet', 'Ernährung', DIETS, profile.diet, 'Alles')}
+          ${text('avoid', 'Das magst du nicht oder verträgst es nicht', profile.avoid, 2, 300, 'Zum Beispiel: Pilze, Koriander')}
+          ${text('health', 'Medikamente oder Erkrankungen', profile.health, 2, 300, 'Freiwillig')}
+        </div>
+        <p class="foot">Medikamente und Erkrankungen sieht nur die Supplement-Beratung.</p>
       </fieldset>
     </form>`;
 }
@@ -303,7 +309,7 @@ function readForm(form, before) {
     cookDays: numeric('cookDays') ?? 1,
     cookMinutes: numeric('cookMinutes') ?? 90,
     meals: data.getAll('meals'),
-    freezer: data.get('freezer') !== 'no',
+    freezer: data.get('freezer') === 'yes',
     diet: data.getAll('diet'),
     avoid: String(data.get('avoid') ?? '').trim(),
     devices: data.getAll('devices'),
