@@ -1,4 +1,4 @@
-const VERSION = 'v1';
+const VERSION = 'v2';
 // Volumora lives on the same domain: only caches with this prefix are ours to touch.
 const PREFIX = 'prepora-';
 const CACHE = `${PREFIX}${VERSION}`;
@@ -7,7 +7,9 @@ const ASSETS = [
   './index.html',
   './styles.css',
   './manifest.json',
+  './src/ai.js',
   './src/app.js',
+  './src/session.js',
   './assets/fonts/satoshi-500.woff2',
   './assets/fonts/satoshi-700.woff2',
   './assets/icons/favicon-32.png',
