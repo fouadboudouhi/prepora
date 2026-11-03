@@ -24,7 +24,3 @@ export async function askClaude({ messages, system, maxTokens = 16000, effort = 
   if (!text) throw new SessionError('server');
   return text;
 }
-
-// One short question, to see that the whole way from here to Claude works.
-export const testClaude = () =>
-  askClaude({ messages: [{ role: 'user', content: 'Antworte nur mit: OK' }], maxTokens: 500, effort: 'low' });

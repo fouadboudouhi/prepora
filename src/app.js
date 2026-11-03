@@ -1,14 +1,11 @@
 // The shell: sign-in with the Volumora account, then four tabs. The real screens follow the milestones in PLAN.md.
-import { testClaude } from './ai.js';
+import { GOALS, dailyTargets } from './nutrition.js';
+import { getProfile } from './profile.js';
+import { profileView, saveFromForm, showTargets, targetText } from './profileView.js';
 import { SessionError, getSession, refreshMe, signIn, signOut } from './session.js';
 
 const TABS = [
-  {
-    id: 'today',
-    label: 'Heute',
-    title: 'Heute',
-    empty: 'Noch kein Plan. Hier steht bald, was du heute isst.',
-  },
+  { id: 'today', label: 'Heute', title: 'Heute', empty: '' },
   { id: 'plan', label: 'Plan', title: 'Wochenplan', empty: 'Hier entsteht dein Plan für die Woche.' },
   { id: 'shop', label: 'Einkauf', title: 'Einkauf', empty: 'Die Einkaufsliste kommt mit dem ersten Plan.' },
   { id: 'more', label: 'Mehr', title: 'Mehr', empty: '' },
@@ -19,7 +16,6 @@ const ERRORS = {
   blocked: 'Zu viele Versuche. Bitte in zehn Minuten nochmal.',
   budget: 'Das Claude-Budget für diesen Monat ist aufgebraucht.',
   noai: 'Auf dem Server ist kein Claude-Schlüssel hinterlegt.',
-  refused: 'Claude hat diese Anfrage abgelehnt.',
   server: 'Beim Server ist etwas schiefgelaufen.',
 };
 const errorText = (err) => ERRORS[err instanceof SessionError ? err.code : 'server'] ?? ERRORS.server;
@@ -35,29 +31,55 @@ function aiLine(ai) {
   return `${money(ai.used)} von ${money(ai.budget)} diesen Monat`;
 }
 
+function todayView() {
+  const profile = getProfile();
+  const targets = dailyTargets(profile);
+  if (!targets)
+    return `
+      <div class="card">
+        <h2>Was ist dein Ziel?</h2>
+        <p>Daraus berechnet Prepora deine Kalorien und dein Eiweiß.</p>
+        <button type="button" class="primary" data-tab="profile">Profil ausfüllen</button>
+      </div>`;
+  return `
+    <div class="list">
+      <button type="button" class="row" data-tab="profile" id="todayTargets">
+        <span>${esc(GOALS[profile.goal].label)}</span><span class="muted">${esc(targetText(targets))}</span>
+      </button>
+    </div>
+    <p class="note">Noch kein Plan. Hier steht bald, was du heute isst.</p>`;
+}
+
 function moreView() {
   const session = getSession();
   return `
     <div class="list">
+      <button type="button" class="row" data-tab="profile" id="openProfile"><span>Profil</span><span class="muted">Ziel, Körper, Kochen, Essen</span></button>
       <div class="row"><span>Konto</span><span class="muted" id="accountName">${esc(session.username)}</span></div>
       <div class="row"><span>Claude</span><span class="muted" id="aiLine">${esc(aiLine(session.ai))}</span></div>
     </div>
-    <p class="note" id="testResult" role="status"></p>
-    <button type="button" class="secondary" id="testClaude">Claude testen</button>
     <button type="button" class="secondary" id="signOut">Abmelden</button>`;
 }
 
+const VIEWS = { today: todayView, more: moreView };
+
 function showTab(id) {
   current = id;
-  const tab = TABS.find((entry) => entry.id === id) ?? TABS[0];
+  // The profile opens from Mehr and Heute and stays in the Mehr tab.
+  const active = id === 'profile' ? 'more' : id;
+  const tab = TABS.find((entry) => entry.id === active) ?? TABS[0];
+  const content =
+    id === 'profile' ? profileView() : `<h1>${tab.title}</h1>${VIEWS[tab.id]?.() ?? `<p>${tab.empty}</p>`}`;
   app.innerHTML = `
-    <main class="page"><h1>${tab.title}</h1>${tab.id === 'more' ? moreView() : `<p>${tab.empty}</p>`}</main>
+    <main class="page">${content}</main>
     <nav class="tabs" aria-label="Bereiche">
       ${TABS.map(
         (entry) =>
           `<button type="button" data-tab="${entry.id}"${entry.id === tab.id ? ' aria-current="page"' : ''}>${entry.label}</button>`
       ).join('')}
     </nav>`;
+  window.scrollTo(0, 0);
+  showTargets();
 }
 
 function showGate() {
@@ -133,21 +155,15 @@ app.addEventListener('click', async (event) => {
     showGate();
     return;
   }
-  const test = event.target.closest('#testClaude');
-  if (test) {
-    const result = document.getElementById('testResult');
-    test.disabled = true;
-    result.textContent = 'Frage Claude …';
-    try {
-      await testClaude();
-      if (result.isConnected)
-        result.textContent = 'Claude antwortet. Dein Schlüssel vom Server funktioniert.';
-    } catch (err) {
-      if (result.isConnected) result.textContent = errorText(err);
-    }
-    test.disabled = false;
-  }
 });
+
+// Every answer counts the moment it is given, there is no save button.
+const saveProfileChange = (event) => {
+  const form = event.target.closest?.('#profile');
+  if (form) saveFromForm(form);
+};
+app.addEventListener('change', saveProfileChange);
+app.addEventListener('input', saveProfileChange);
 
 start();
 

@@ -146,16 +146,22 @@ test('its own sign-out ends the session on the server', async () => {
   await context.close();
 });
 
+// No screen uses Claude yet, so these ask it the way the first plan will.
+const ask = (page) =>
+  page.evaluate(async () => {
+    const { askClaude } = await import('/src/ai.js');
+    return askClaude({ messages: [{ role: 'user', content: 'Hallo' }] }).catch(
+      (err) => `Fehler: ${err.code}`
+    );
+  });
+
 test('Claude goes through the server with the sign-in, no key is involved', async () => {
   const { context, page, calls } = await open({ storage: signedIn });
   await page.click('[data-tab="more"]');
   await page.waitForFunction(() =>
     document.getElementById('aiLine')?.textContent.includes('0,12 $ von 5,00 $')
   );
-  await page.click('#testClaude');
-  await page.waitForFunction(() =>
-    document.getElementById('testResult').textContent.includes('Claude antwortet')
-  );
+  assert.equal(await ask(page), 'OK');
 
   const call = calls.find((entry) => entry.path === '/v1/ai/messages');
   assert.equal(call.auth, 'Bearer fouad.alt');
@@ -165,13 +171,61 @@ test('Claude goes through the server with the sign-in, no key is involved', asyn
   await context.close();
 });
 
-test('an empty budget is named instead of failing silently', async () => {
+test('an empty budget comes back as its own error', async () => {
   const { context, page } = await open({ storage: signedIn, claude: 402 });
-  await page.click('[data-tab="more"]');
-  await page.click('#testClaude');
-  await page.waitForFunction(() =>
-    document.getElementById('testResult').textContent.includes('aufgebraucht')
-  );
+  assert.equal(await ask(page), 'Fehler: budget');
+  await context.close();
+});
+
+test('the profile saves every answer, shows the targets and survives a reload', async () => {
+  const { context, page, errors } = await open({ storage: signedIn });
+  await page.click('#app [data-tab="profile"]');
+  assert.equal(await page.locator('h1').innerText(), 'Profil');
+  assert.equal(await page.locator('[aria-current="page"]').getAttribute('data-tab'), 'more');
+
+  await page.locator('.pill', { hasText: 'Muskelaufbau' }).click();
+  await page.fill('[name="age"]', '30');
+  await page.fill('[name="height"]', '180');
+  await page.fill('[name="weight"]', '80');
+  await page.locator('.pill', { hasText: 'Männlich' }).click();
+  await page.locator('.pill', { hasText: 'Mittel' }).click();
+  await page.locator('.pill', { hasText: 'Zwei' }).click();
+  await page.locator('.pill', { hasText: 'Frühstück' }).click();
+  await page.locator('.pill', { hasText: 'Keiner' }).click();
+  await page.fill('[name="avoid"]', 'Pilze <b>');
+  assert.match(await page.locator('#targets').innerText(), /ca\. 3\.\d{3} kcal, 160 g Eiweiß am Tag/);
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
+  assert.equal(saved.goal, 'muscle');
+  assert.equal(saved.weight, 80);
+  assert.equal(saved.cookDays, 2);
+  assert.equal(saved.freezer, false);
+  assert.deepEqual(saved.meals, ['Frühstück', 'Mittagessen', 'Abendessen']);
+
+  await page.reload();
+  assert.match(await page.locator('#todayTargets').innerText(), /Muskelaufbau[\s\S]*160 g Eiweiß/);
+  await page.click('#todayTargets');
+  assert.equal(await page.locator('[name="weight"]').inputValue(), '80');
+  assert.equal(await page.locator('[name="avoid"]').inputValue(), 'Pilze <b>');
+  assert.ok(await page.locator('input[name="freezer"][value="no"]').isChecked());
+  await page.click('.back');
+  assert.equal(await page.locator('h1').innerText(), 'Mehr');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('Heute asks for the profile until it is complete', async () => {
+  const { context, page } = await open({ storage: signedIn });
+  await page.locator('.card [data-tab="profile"]').click();
+  assert.equal(await page.locator('h1').innerText(), 'Profil');
+  await context.close();
+});
+
+test('a diet at the limit says so', async () => {
+  const profile = { goal: 'lose', sex: 'female', age: 40, height: 170, weight: 50, activity: 'low' };
+  const { context, page } = await open({ storage: { ...signedIn, 'prepora-profile': profile } });
+  await page.click('#todayTargets');
+  assert.match(await page.locator('#targets').innerText(), /Untergewicht/);
   await context.close();
 });
 
@@ -236,6 +290,9 @@ for (const colorScheme of ['light', 'dark']) {
     await gate.context.close();
     const more = await open({ colorScheme, storage: signedIn });
     await more.page.click('[data-tab="more"]');
+    assert.deepEqual(await check(more.page), []);
+    await more.page.click('#openProfile');
+    await more.page.locator('.pill', { hasText: 'Abnehmen' }).click();
     assert.deepEqual(await check(more.page), []);
     await more.context.close();
   });

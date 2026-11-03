@@ -190,3 +190,165 @@ body {
 .secondary:disabled {
   opacity: 0.6;
 }
+
+h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.card {
+  margin-top: 20px;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: 20px;
+}
+.card .primary {
+  margin-top: 14px;
+}
+button.row {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.back {
+  min-height: 44px;
+  margin: -12px 0 4px -2px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.target {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: 20px;
+}
+
+.stack fieldset {
+  margin: 28px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.stack legend {
+  padding: 0;
+  margin-bottom: 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.page .caption {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pill input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.pill span {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 22px;
+  background: var(--cloud);
+  font-weight: 700;
+  cursor: pointer;
+}
+.pill input:checked + span {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.pill input:focus-visible + span {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.fields .field {
+  margin-top: 0;
+}
+.with-unit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--cloud);
+}
+.with-unit input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.with-unit input::-webkit-outer-spin-button,
+.with-unit input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.with-unit input:focus {
+  outline: 0;
+}
+.with-unit:focus-within {
+  outline: 2px solid var(--accent);
+}
+.with-unit .muted {
+  font-size: 12px;
+  font-weight: 500;
+}
+.field textarea {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  resize: vertical;
+}
+.field textarea:focus {
+  outline: 2px solid var(--accent);
+}

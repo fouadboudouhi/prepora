@@ -25,7 +25,7 @@ Prepora geht vom **Kochtag** aus, nicht vom einzelnen Rezept. Aus Ziel, Geschmac
 
 - **Haltbarkeit:** Gekochtes als Faustregel 3–4 Tage im Kühlschrank. Was später gegessen wird, plant die App für den Tiefkühler oder einen zweiten Kochtag. Das prüft der App-Code, nicht nur die KI.
 - **Nährwerte:** Die KI liefert Zutaten und Mengen, die App rechnet mit einer Nährwerttabelle. Unbekannte Zutaten schätzt die KI und die App kennzeichnet sie. Angezeigt wird immer „ca.“.
-- **Kalorienziel:** Feste Untergrenze beim Abnehmen, keine Crash-Diäten.
+- **Kalorienziel:** Beim Abnehmen und bei der Definition nie unter den Ruhebedarf (mindestens 1.500 kcal bei Männern, 1.200 bei Frauen, 1.350 ohne Angabe). Bei Untergewicht plant Prepora kein Defizit. Für Erwachsene ab 18.
 
 ## Technik
 
@@ -45,7 +45,7 @@ Ablauf: Branch, Pull Request, grüne Tests, Merge. Merge heißt live.
 | M0 | Grundgerüst, Tests, GitHub Pages | fertig |
 | M1 | Orange als Farbe, Anmeldung mit dem Volumora-Konto, Claude über den Server | fertig |
 | M2 | Server: eigener Datenplatz; Abgleich in der App | offen |
-| M3 | Profil und Ziele mit Kalorien- und Eiweißziel | offen |
+| M3 | Profil und Ziele mit Kalorien- und Eiweißziel | fertig |
 | M4 | Rezepte und Nährwert-Tabelle | offen |
 | M5 | KI-Wochenplan mit Haltbarkeitsprüfung, Tauschen, Woche wiederholen | offen |
 | M6 | Einkaufsliste | offen |
