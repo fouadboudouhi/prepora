@@ -25,6 +25,8 @@
   --danger: #d70015;
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9.5 6 6 6-6 6'/%3E%3C/svg%3E");
   --chevron-back: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.5 6 8.5 12l6 6'/%3E%3C/svg%3E");
+  --updown: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m8 9.5 4-4 4 4M8 14.5l4 4 4-4'/%3E%3C/svg%3E");
+  --check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5.5 12.5 4 4 9-9'/%3E%3C/svg%3E");
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -265,18 +267,6 @@ button.row {
   border-radius: 20px;
 }
 
-.stack fieldset {
-  margin: 28px 0 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
-.stack legend {
-  padding: 0;
-  margin-bottom: 10px;
-  font-size: 16px;
-  font-weight: 700;
-}
 .page .caption {
   margin: 16px 0 8px;
   font-size: 13px;
@@ -889,4 +879,303 @@ label.row:active {
 /* Claude's suggestion for goal and activity: a little air between its lines */
 #goalAdvice p + p {
   margin-top: 8px;
+}
+
+/* The profile: grouped rows like the phone's own settings, the name on the left and the answer on the right */
+.settings fieldset {
+  min-width: 0;
+  margin: 30px 0 0;
+  padding: 0;
+  border: 0;
+}
+.settings legend {
+  margin-bottom: 8px;
+  padding: 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.settings .list,
+.settings .card {
+  margin-top: 0;
+}
+.settings .list + .list,
+.settings .card + .list,
+.settings .list + .card,
+.settings .list + .note {
+  margin-top: 12px;
+}
+.settings .list > * + * {
+  border-top: 1px solid var(--line);
+}
+.settings .row {
+  min-height: 52px;
+  font-size: 16px;
+  font-weight: 500;
+}
+.settings .foot {
+  margin: 8px 16px 0;
+  font-size: 13px;
+}
+.settings .foot:empty {
+  margin: 0;
+}
+.settings .guide summary {
+  padding: 0 16px;
+}
+
+/* A choice: the select lies over the whole row, so a tap anywhere opens the picker */
+.row.choice {
+  position: relative;
+}
+.row.choice select,
+.pick select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  text-align: right;
+  text-align-last: right;
+  cursor: pointer;
+}
+.row.choice select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0 40px 0 45%;
+  border-radius: inherit;
+}
+.row.choice::after,
+.pick::after {
+  content: '';
+  flex: none;
+  width: 15px;
+  height: 15px;
+  background: var(--muted);
+  opacity: 0.7;
+  pointer-events: none;
+  -webkit-mask: var(--updown) center / contain no-repeat;
+  mask: var(--updown) center / contain no-repeat;
+}
+.row.choice select:focus-visible,
+.pick select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.row:has(.when) {
+  padding-block: 4px;
+}
+.when {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pick select {
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+}
+.row input[type='time'] {
+  flex: none;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.row input[type='time']::-webkit-calendar-picker-indicator {
+  display: none;
+}
+.row input[type='time']:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+/* A number typed into the row, right-aligned before its unit */
+.entry {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+}
+.entry input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  text-align: right;
+  caret-color: var(--accent);
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.entry input::-webkit-outer-spin-button,
+.entry input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.entry input:focus {
+  outline: 0;
+  color: var(--ink);
+}
+.entry input::placeholder {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
+/* Free text inside a row: a small label over a plain field */
+.text-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.text-cell textarea {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  caret-color: var(--accent);
+  resize: none;
+}
+.text-cell textarea:focus {
+  outline: 0;
+}
+.text-cell textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+.row.link {
+  color: var(--accent-ink);
+}
+.row.link:disabled {
+  opacity: 0.6;
+}
+
+/* On or off */
+.switch {
+  position: relative;
+  flex: none;
+  width: 51px;
+  height: 31px;
+  margin: 0;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: background-color 0.2s ease;
+}
+.switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.2);
+  transition: transform 0.2s ease;
+}
+.switch:checked {
+  background: var(--accent);
+}
+.switch:checked::before {
+  transform: translateX(20px);
+}
+.switch:focus-visible,
+.tick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Several answers: closed it names what is chosen, open it lists every option with a tick */
+.several > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.several > summary::-webkit-details-marker {
+  display: none;
+}
+.several > summary .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.several > summary::after {
+  content: '';
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-left: -8px;
+  background: var(--muted);
+  opacity: 0.7;
+  -webkit-mask: var(--chevron) center / contain no-repeat;
+  mask: var(--chevron) center / contain no-repeat;
+  transform: rotate(90deg);
+  transition: transform 0.2s ease;
+}
+.several[open] > summary::after {
+  transform: rotate(-90deg);
+}
+.several > label.row {
+  padding-left: 28px;
+}
+.tick {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border: 1.5px solid color-mix(in srgb, var(--ink) 28%, transparent);
+  border-radius: 50%;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.tick:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.tick:checked::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: var(--on-accent);
+  -webkit-mask: var(--check) center / contain no-repeat;
+  mask: var(--check) center / contain no-repeat;
+}
+.guide h3 {
+  margin: 14px 0 0;
+  font-size: 15px;
 }
