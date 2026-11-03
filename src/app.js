@@ -5,6 +5,7 @@ import { planActions, planView, readFridgePhoto } from './planView.js';
 import { photoActions, photoView, readDishPhoto, recheckDish } from './photoView.js';
 import { saveFromForm, profileActions, profileView, showTargets } from './profileView.js';
 import { importRecipe, importRecipePhoto, recipeActions, recipesView } from './recipesView.js';
+import { icon } from './icons.js';
 import { pushOn } from './push.js';
 import { getSession, refreshMe, signIn, signOut } from './session.js';
 import { shopActions, shopView } from './shopView.js';
@@ -44,6 +45,48 @@ const ACTIONS = {
   ...recipeActions,
 };
 
+// The rows under Mehr; each hint is worked out when the screen is drawn.
+const MORE = [
+  {
+    tab: 'profile',
+    id: 'openProfile',
+    icon: 'person',
+    label: 'Profil',
+    hint: () => 'Ziel, Körper, Kochen, Essen',
+  },
+  {
+    tab: 'taste',
+    id: 'openTaste',
+    icon: 'heart',
+    label: 'Geschmack',
+    hint: () => 'Was Prepora über dich weiß',
+  },
+  {
+    tab: 'recipes',
+    id: 'openRecipes',
+    icon: 'book',
+    label: 'Eigene Rezepte',
+    hint: () => 'Aus Link, Foto oder Text',
+  },
+  {
+    tab: 'supplements',
+    id: 'openSupplements',
+    icon: 'pill',
+    label: 'Supplements',
+    hint: () => 'Deine und was Claude rät',
+  },
+  {
+    tab: 'stock',
+    id: 'openStock',
+    icon: 'snow',
+    label: 'Tiefkühler',
+    hint: () => {
+      const portions = getStock().reduce((sum, item) => sum + item.portions, 0);
+      return `${number(portions)} ${portions === 1 ? 'Portion' : 'Portionen'}`;
+    },
+  },
+];
+
 const money = (value) => `${Number(value).toFixed(2).replace('.', ',')} $`;
 const app = document.getElementById('app');
 let current = 'today';
@@ -56,14 +99,15 @@ function aiLine(ai) {
 
 function moreView() {
   const session = getSession();
-  const portions = getStock().reduce((sum, item) => sum + item.portions, 0);
   return `
     <div class="list">
-      <button type="button" class="row" data-tab="profile" id="openProfile"><span>Profil</span><span class="muted">Ziel, Körper, Kochen, Essen</span></button>
-      <button type="button" class="row" data-tab="taste" id="openTaste"><span>Geschmack</span><span class="muted">Was Prepora über dich weiß</span></button>
-      <button type="button" class="row" data-tab="recipes" id="openRecipes"><span>Eigene Rezepte</span><span class="muted">Aus Link, Foto oder Text</span></button>
-      <button type="button" class="row" data-tab="supplements" id="openSupplements"><span>Supplements</span><span class="muted">Deine und was Claude rät</span></button>
-      <button type="button" class="row" data-tab="stock" id="openStock"><span>Tiefkühler</span><span class="muted">${number(portions)} ${portions === 1 ? 'Portion' : 'Portionen'}</span></button>
+      ${MORE.map(
+        (entry) => `
+        <button type="button" class="row go" data-tab="${entry.tab}" id="${entry.id}">
+          <span class="tile">${icon(entry.icon)}</span>
+          <span class="grow"><span class="block">${entry.label}</span><span class="muted small">${entry.hint()}</span></span>
+        </button>`
+      ).join('')}
     </div>
     <div class="list">
       <div class="row"><span>Konto</span><span class="muted" id="accountName">${esc(session.username)}</span></div>
@@ -92,7 +136,7 @@ function draw() {
     <nav class="tabs" aria-label="Bereiche">
       ${TABS.map(
         (entry) =>
-          `<button type="button" data-tab="${entry.id}"${entry.id === tab.id ? ' aria-current="page"' : ''}>${entry.label}</button>`
+          `<button type="button" data-tab="${entry.id}"${entry.id === tab.id ? ' aria-current="page"' : ''}>${icon(entry.id)}<span>${entry.label}</span></button>`
       ).join('')}
     </nav>`;
   showTargets();
@@ -120,6 +164,7 @@ function open(id) {
 function showGate() {
   app.innerHTML = `
     <main class="page gate">
+      <img class="gate-icon" src="assets/icons/icon-192.png" alt="" width="64" height="64">
       <h1>Prepora</h1>
       <p>Melde dich mit deinem Volumora-Konto an.</p>
       <form id="signIn" novalidate>

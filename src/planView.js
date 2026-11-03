@@ -10,6 +10,7 @@ import {
   saveFridge,
 } from './actions.js';
 import { askClaudeJson } from './ai.js';
+import { icon } from './icons.js';
 import { dailyTargets } from './nutrition.js';
 import { getProfile } from './profile.js';
 import { boxCheck, mealName, mealNutrition, weekdayOf } from './planner.js';
@@ -47,7 +48,9 @@ function boxLine(plan, date) {
   return short ? `${main}. Dir fehlen ${short}.` : `${main}.`;
 }
 
-const placeOf = (meal) => (meal.storage === 'freezer' ? `Tiefkühler, am Vorabend auftauen` : 'Kühlschrank');
+// The fridge is where a box usually waits, so only the freezer is said.
+const placeOf = (meal) =>
+  meal.storage === 'freezer' ? '<span class="muted small block">Tiefkühler, am Vorabend auftauen</span>' : '';
 
 function fridgeBlock() {
   const items = getFridge();
@@ -56,7 +59,7 @@ function fridgeBlock() {
       ${
         fridgeState.busy
           ? '<p class="note" role="status">Claude schaut in deinen Kühlschrank …</p>'
-          : `<label class="secondary as-button">Kühlschrank fotografieren<input id="fridgePhoto" type="file" accept="image/*" capture="environment" hidden></label>`
+          : `<label class="secondary as-button">${icon('camera')}Kühlschrank fotografieren<input id="fridgePhoto" type="file" accept="image/*" capture="environment" hidden></label>`
       }
       ${fridgeState.error ? `<p class="error" role="alert">${esc(errorText(fridgeState.error))}</p>` : ''}
       ${
@@ -128,7 +131,7 @@ export function planView() {
           return `<div class="row stacked"><span>${esc(dayLabel(date))}</span>${meals
             .map(
               (meal) =>
-                `<span class="muted${meal.eaten ? ' done' : ''}">${esc(meal.meal)}: ${esc(mealName(plan, meal))}. ${esc(placeOf(meal))}</span>`
+                `<span class="meal${meal.eaten ? ' done' : ''}"><span class="muted">${esc(meal.meal)}</span><span><span class="dish block">${esc(mealName(plan, meal))}</span>${placeOf(meal)}</span></span>`
             )
             .join('')}</div>`;
         })

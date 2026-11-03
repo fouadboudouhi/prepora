@@ -3,6 +3,7 @@
 import { getMyRecipes, saveMyRecipes } from './actions.js';
 import { askClaudeJson } from './ai.js';
 import { FOOD_IDS, nutritionOf } from './foods.js';
+import { icon } from './icons.js';
 import { imageBlock, shrink } from './photo.js';
 import { ingredientSchema } from './planner.js';
 import { SessionError } from './session.js';
@@ -118,7 +119,7 @@ export function recipesView() {
       </label>
       <button type="submit" class="secondary"${state.busy ? ' disabled' : ''}>Übernehmen</button>
     </form>
-    <label class="secondary as-button">Rezept fotografieren<input id="recipePhoto" type="file" accept="image/*" hidden></label>`;
+    <label class="secondary as-button">${icon('camera')}Rezept fotografieren<input id="recipePhoto" type="file" accept="image/*" hidden></label>`;
 }
 
 export const recipeActions = {

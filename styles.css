@@ -23,6 +23,8 @@
   --on-accent: #1a1206;
   --accent-ink: #a84b00;
   --danger: #d70015;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9.5 6 6 6-6 6'/%3E%3C/svg%3E");
+  --chevron-back: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.5 6 8.5 12l6 6'/%3E%3C/svg%3E");
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -43,6 +45,7 @@
 html,
 body {
   margin: 0;
+  -webkit-tap-highlight-color: transparent;
   background: var(--paper);
   color: var(--ink);
   font:
@@ -56,7 +59,7 @@ body {
 .page {
   max-width: 680px;
   margin: 0 auto;
-  padding: 32px 24px 112px;
+  padding: 32px 24px calc(120px + env(safe-area-inset-bottom));
 }
 .page h1 {
   margin: 0 0 6px;
@@ -69,30 +72,54 @@ body {
   color: var(--muted);
 }
 
+/* Tab bar: a floating capsule of frosted glass, icon over label, the current tab on a soft orange pill */
 .tabs {
   position: fixed;
-  inset: auto 0 0;
-  display: flex;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
-  background: var(--surface);
-  border-top: 1px solid var(--line);
+  inset: auto 16px max(12px, calc(env(safe-area-inset-bottom) - 8px));
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 5px;
+  border-radius: 32px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--ink) 14%, transparent),
+    0 10px 30px rgb(0 0 0 / 0.14);
 }
 .tabs button {
-  flex: 1;
-  max-width: 160px;
-  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 54px;
   border: 0;
+  border-radius: 27px;
   background: none;
   color: var(--muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease;
+}
+.tabs .glyph {
+  width: 24px;
+  height: 24px;
 }
 .tabs button[aria-current='page'] {
   color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.tabs button:active {
+  transform: scale(0.94);
 }
 
 .page a {
@@ -676,4 +703,111 @@ h2.section {
 .pills.week .pill span {
   justify-content: center;
   padding: 0;
+}
+
+/* Rows that open a screen: an orange icon tile where there is one, a quiet chevron at the end */
+.row.go {
+  gap: 14px;
+}
+.row.go::after {
+  content: '';
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+  background: var(--muted);
+  opacity: 0.6;
+  -webkit-mask: var(--chevron) center / contain no-repeat;
+  mask: var(--chevron) center / contain no-repeat;
+}
+.tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent-ink);
+}
+.tile .glyph {
+  width: 20px;
+  height: 20px;
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+}
+.back::before {
+  content: '';
+  width: 20px;
+  height: 20px;
+  margin-left: -5px;
+  background: currentColor;
+  -webkit-mask: var(--chevron-back) center / contain no-repeat;
+  mask: var(--chevron-back) center / contain no-repeat;
+}
+.as-button {
+  gap: 8px;
+}
+.as-button .glyph {
+  width: 20px;
+  height: 20px;
+}
+
+/* The week: meal on the left, dish and where it waits on the right */
+.row.stacked .meal {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+  font-weight: 500;
+}
+.row.stacked .meal > .muted {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.meal .dish {
+  color: var(--ink);
+}
+.meal.done .dish {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.gate-icon {
+  display: block;
+  margin-bottom: 18px;
+  border-radius: 15px;
+}
+
+/* Press feedback, since the grey tap flash is off */
+button.row:active,
+label.row:active {
+  background: var(--cloud);
+}
+.primary,
+.secondary,
+.chip,
+.round {
+  transition: transform 0.15s ease;
+}
+.primary:active,
+.secondary:active,
+.chip:active,
+.round:active {
+  transform: scale(0.97);
+}
+
+/* Surfaces: tone on tone with a soft shadow in light, none in dark */
+@media (prefers-color-scheme: light) {
+  .list,
+  .card,
+  .hero,
+  .target {
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.04),
+      0 6px 20px rgb(0 0 0 / 0.04);
+  }
 }

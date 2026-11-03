@@ -2,6 +2,7 @@
 import { addExtra } from './actions.js';
 import { askClaudeJson } from './ai.js';
 import { DISH_SCHEMA, DISH_SYSTEM, assessDish } from './dish.js';
+import { icon } from './icons.js';
 import { imageBlock, shrink } from './photo.js';
 import { localDay } from './planner.js';
 import { errorText, esc, number, openView, rerender } from './ui.js';
@@ -104,7 +105,7 @@ export function photoView() {
     ${state.busy ? '<p class="note" role="status">Claude schaut sich das an …</p>' : ''}
     ${state.error ? `<p class="error" role="alert">${esc(errorText(state.error))}</p>` : ''}
     ${state.assessed ? result() : ''}
-    ${state.busy ? '' : `<label class="secondary as-button">Neues Foto<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>`}`;
+    ${state.busy ? '' : `<label class="secondary as-button">${icon('camera')}Neues Foto<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>`}`;
 }
 
 export const photoActions = {

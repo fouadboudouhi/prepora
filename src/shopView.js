@@ -13,7 +13,7 @@ export function shopView() {
   const all = groups.flatMap((group) => group.items);
   const open = all.filter((item) => !checked[item.id]).length;
   return `
-    <p class="sub" id="shopFor">Alles für die ganze Woche${plan.shopOn ? `, Einkauf ${esc(dayLabel(plan.shopOn))}` : ''}${plan.cost ? `. Geschätzt ca. ${number(plan.cost)} €` : ''}</p>
+    <p class="sub" id="shopFor">Alles für die ganze Woche${plan.shopOn ? `, Einkauf ${esc(dayLabel(plan.shopOn))}` : '.'}${plan.cost ? ` Geschätzt ca. ${number(plan.cost)} €` : ''}</p>
     <p class="sub" id="shopCount">${open ? `${open} von ${all.length} offen` : 'Alles im Wagen'}</p>
     ${groups
       .map(
