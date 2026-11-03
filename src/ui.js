@@ -18,6 +18,7 @@ const ERRORS = {
   toolong: 'Die Antwort wurde zu lang. Bitte nochmal versuchen.',
   badplan: 'Der Plan passte auch im zweiten Anlauf nicht.',
   norecipe: 'Daraus ließ sich kein Rezept lesen.',
+  nowish: 'Schreib erst kurz, was du erreichen willst.',
   server: 'Beim Server ist etwas schiefgelaufen.',
 };
 export const errorText = (err) => {

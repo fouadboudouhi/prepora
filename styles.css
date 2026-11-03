@@ -885,3 +885,8 @@ label.row:active {
 .guide td {
   font-weight: 700;
 }
+
+/* Claude's suggestion for goal and activity: a little air between its lines */
+#goalAdvice p + p {
+  margin-top: 8px;
+}

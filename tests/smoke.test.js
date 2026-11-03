@@ -172,82 +172,89 @@ async function open({
         ? JSON.stringify(fakePlan(asked))
         : isPhoto
           ? JSON.stringify({ items: ['Paprika', 'Quark'] })
-          : required.includes('kcalLow')
-            ? JSON.stringify(
-                said.includes('Lasagne')
-                  ? {
-                      isFood: true,
-                      dish: 'Lasagne',
-                      confidence: 'mittel',
-                      reason: '',
-                      portion: 'Normale Portion',
-                      kcalLow: 600,
-                      kcalHigh: 800,
-                      protein: 30,
-                      components: ['Nudeln', 'Hack', 'Käse'],
-                    }
-                  : {
-                      isFood: true,
-                      dish: 'Auflauf',
-                      confidence: 'niedrig',
-                      reason: 'Die Menge ist nicht zu sehen.',
-                      portion: '',
-                      kcalLow: 200,
-                      kcalHigh: 900,
-                      protein: 10,
-                      components: [],
-                    }
-              )
-            : required.includes('recommended')
-              ? JSON.stringify({
-                  recommended: [
-                    {
-                      name: 'Kreatin',
-                      dose: '3 g',
-                      when: 'Täglich',
-                      why: 'Hilft beim Muskelaufbau.',
-                      evidence: 'stark',
-                      caution: '',
-                    },
-                    {
-                      name: 'Vitamin D',
-                      dose: '1000 IE',
-                      when: 'Im Winter',
-                      why: 'Wenig Sonne.',
-                      evidence: 'mittel',
-                      caution: 'Vorher Bluttest.',
-                    },
-                  ],
-                  notNeeded: [{ name: 'BCAA', why: 'Dein Eiweiß reicht.' }],
-                  note: 'Du brauchst wenig.',
-                })
-              : required.includes('found')
-                ? JSON.stringify(
-                    said.includes('kein Rezept')
-                      ? {
-                          found: false,
-                          name: '',
-                          servings: 0,
-                          fridgeDays: 0,
-                          freezes: false,
-                          reheat: '',
-                          ingredients: [],
-                          steps: [],
-                        }
-                      : {
-                          found: true,
-                          name: 'Omas Gulasch',
-                          servings: 4,
-                          fridgeDays: 4,
-                          freezes: true,
-                          reheat: '3 Minuten',
-                          ingredients: [
-                            FAKE_FOOD('Rindfleisch', 'rindfleisch', 800, 'Fleisch und Fisch', 500),
-                          ],
-                          steps: ['Schmoren'],
-                        }
-                  )
-                : 'Nimm Petersilie.';
+          : required.includes('assumption')
+            ? JSON.stringify({
+                goal: 'cut',
+                activity: 'medium',
+                reason: 'Du willst Fett verlieren und trainierst dreimal.',
+                assumption: 'Ich gehe von einem Bürojob aus.',
+              })
+            : required.includes('kcalLow')
+              ? JSON.stringify(
+                  said.includes('Lasagne')
+                    ? {
+                        isFood: true,
+                        dish: 'Lasagne',
+                        confidence: 'mittel',
+                        reason: '',
+                        portion: 'Normale Portion',
+                        kcalLow: 600,
+                        kcalHigh: 800,
+                        protein: 30,
+                        components: ['Nudeln', 'Hack', 'Käse'],
+                      }
+                    : {
+                        isFood: true,
+                        dish: 'Auflauf',
+                        confidence: 'niedrig',
+                        reason: 'Die Menge ist nicht zu sehen.',
+                        portion: '',
+                        kcalLow: 200,
+                        kcalHigh: 900,
+                        protein: 10,
+                        components: [],
+                      }
+                )
+              : required.includes('recommended')
+                ? JSON.stringify({
+                    recommended: [
+                      {
+                        name: 'Kreatin',
+                        dose: '3 g',
+                        when: 'Täglich',
+                        why: 'Hilft beim Muskelaufbau.',
+                        evidence: 'stark',
+                        caution: '',
+                      },
+                      {
+                        name: 'Vitamin D',
+                        dose: '1000 IE',
+                        when: 'Im Winter',
+                        why: 'Wenig Sonne.',
+                        evidence: 'mittel',
+                        caution: 'Vorher Bluttest.',
+                      },
+                    ],
+                    notNeeded: [{ name: 'BCAA', why: 'Dein Eiweiß reicht.' }],
+                    note: 'Du brauchst wenig.',
+                  })
+                : required.includes('found')
+                  ? JSON.stringify(
+                      said.includes('kein Rezept')
+                        ? {
+                            found: false,
+                            name: '',
+                            servings: 0,
+                            fridgeDays: 0,
+                            freezes: false,
+                            reheat: '',
+                            ingredients: [],
+                            steps: [],
+                          }
+                        : {
+                            found: true,
+                            name: 'Omas Gulasch',
+                            servings: 4,
+                            fridgeDays: 4,
+                            freezes: true,
+                            reheat: '3 Minuten',
+                            ingredients: [
+                              FAKE_FOOD('Rindfleisch', 'rindfleisch', 800, 'Fleisch und Fisch', 500),
+                            ],
+                            steps: ['Schmoren'],
+                          }
+                    )
+                  : 'Nimm Petersilie.';
       return route.fulfill({
         status: 200,
         headers: { ...cors, 'content-type': 'text/event-stream' },
@@ -386,6 +393,47 @@ test('Claude goes through the server with the sign-in, no key is involved', asyn
 test('an empty budget comes back as its own error', async () => {
   const { context, page } = await open({ storage: signedIn, claude: 402 });
   assert.equal(await ask(page), 'Fehler: budget');
+  await context.close();
+});
+
+test('Claude suggests goal and activity from a wish in own words, and one tap takes it', async () => {
+  const profile = {
+    goal: 'muscle',
+    sex: 'male',
+    age: 31,
+    height: 184,
+    weight: 89,
+    activity: 'high',
+    health: 'Nimmt Blutverdünner',
+  };
+  const { context, page, calls, errors } = await open({
+    storage: { ...signedIn, 'prepora-profile': profile },
+  });
+  await page.click('#app [data-tab="profile"]');
+  await page.click('[data-action="adviseGoal"]');
+  assert.match(await page.locator('.error').innerText(), /Schreib erst/);
+
+  await page.fill('[name="goalText"]', 'Bauch weg, Muskeln behalten. Ich trainiere dreimal die Woche.');
+  await page.click('[data-action="adviseGoal"]');
+  await page.waitForSelector('#goalAdvice');
+  const card = await page.locator('#goalAdvice').innerText();
+  assert.match(card, /Definition, Bewegung Mittel/);
+  assert.match(card, /ca\. 2\.650 kcal, 195 g Eiweiß am Tag/);
+  assert.match(card, /Bürojob/);
+  const asked = calls.find((call) => call.path === '/v1/ai/messages').body;
+  assert.match(asked, /Bauch weg, Muskeln behalten/);
+  assert.doesNotMatch(asked, /Blutverdünner/);
+
+  await page.click('[data-action="applyAdvice"]');
+  assert.match(await page.locator('#goalAdvice').innerText(), /Ist so eingestellt/);
+  assert.match(await page.locator('#targets').innerText(), /ca\. 2\.650 kcal/);
+  assert.equal(await page.locator('[name="goal"]:checked').getAttribute('value'), 'cut');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
+  assert.equal(saved.goal, 'cut');
+  assert.equal(saved.activity, 'medium');
+  assert.equal(saved.activityFrom, '');
+  assert.equal(saved.goalText, 'Bauch weg, Muskeln behalten. Ich trainiere dreimal die Woche.');
+  assert.deepEqual(errors, []);
   await context.close();
 });
 
