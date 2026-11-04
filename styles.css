@@ -1180,12 +1180,80 @@ label.row:active {
   font-size: 15px;
 }
 
-/* The chat with Claude: its answers on the page, the person's own lines in soft orange on the right */
-.chat {
+/* The chat with Claude has the screen to itself: a bar on top, the messages scrolling in between, the field pinned
+   below and right above the keyboard when it is open. Its answers sit on the page, the person's lines in soft orange. */
+.chat-screen {
+  position: fixed;
+  top: var(--keyboard-shift, 0px);
+  left: 0;
+  right: 0;
+  height: var(--visible-height, 100dvh);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
+  background: var(--paper);
+}
+.chat-head {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: max(6px, env(safe-area-inset-top)) 12px 6px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.chat-head h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.chat-head .back {
+  justify-self: start;
+  margin: 0 0 0 -4px;
+}
+.head-icon {
+  justify-self: end;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+.head-icon .glyph {
+  width: 22px;
+  height: 22px;
+}
+.chat-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px max(16px, calc((100% - 680px) / 2)) 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* Like a messenger, a short chat sits at the bottom next to the field */
+.chat-scroll > :first-child {
+  margin-top: auto;
+}
+.chat-empty p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.chat-foot {
+  flex: none;
+  padding: 8px max(12px, calc((100% - 680px) / 2)) max(10px, env(safe-area-inset-bottom));
+}
+.keyboard-open .chat-foot {
+  padding-bottom: 8px;
+}
+.chat-foot .note {
+  margin: 0 4px 8px;
 }
 .bubble {
   max-width: 100%;
@@ -1197,9 +1265,9 @@ label.row:active {
   margin: 0;
   color: var(--ink);
 }
-.page .bubble p + p,
-.page .bubble p + ul,
-.page .bubble ul + p {
+.bubble p + p,
+.bubble p + ul,
+.bubble ul + p {
   margin-top: 10px;
 }
 .bubble ul {
@@ -1306,8 +1374,7 @@ label.row:active {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  margin-top: 20px;
-  padding: 6px 6px 6px 16px;
+  padding: 4px 4px 4px 16px;
   border-radius: 24px;
   background: var(--surface);
 }
@@ -1316,8 +1383,9 @@ label.row:active {
 }
 .composer textarea {
   flex: 1;
+  min-width: 0;
   min-height: 36px;
-  max-height: 160px;
+  max-height: 132px;
   padding: 7px 0;
   border: 0;
   background: none;
@@ -1326,7 +1394,6 @@ label.row:active {
   font-size: 16px;
   caret-color: var(--accent);
   resize: none;
-  field-sizing: content;
 }
 .composer textarea:focus {
   outline: 0;
@@ -1349,8 +1416,4 @@ label.row:active {
 .send .glyph {
   width: 20px;
   height: 20px;
-}
-.new-chat {
-  display: block;
-  margin: 12px auto 0;
 }

@@ -1,6 +1,6 @@
 // The shell: sign-in with the Volumora account, four tabs, and the full-screen cook day above them.
 import { applyTrend, getStock, updateBlocks } from './actions.js';
-import { chatActions, chatView, keepDraft, send, showLatest } from './chatView.js';
+import { chatActions, drawChat, keepDraft, send, watchKeyboard } from './chatView.js';
 import { askHelper, cookActions, cookView, cooking, startTicking } from './cookView.js';
 import { planActions, planView, readFridgePhoto } from './planView.js';
 import { photoActions, photoView, readDishPhoto, recheckDish } from './photoView.js';
@@ -22,7 +22,7 @@ const TABS = [
   { id: 'today', label: 'Heute', title: 'Heute', view: todayView },
   { id: 'plan', label: 'Plan', title: 'Wochenplan', view: planView },
   { id: 'shop', label: 'Einkauf', title: 'Einkauf', view: shopView },
-  { id: 'chat', label: 'Claude', title: 'Claude', view: chatView },
+  { id: 'chat', label: 'Claude', title: 'Claude' },
   { id: 'more', label: 'Mehr', title: 'Mehr', view: moreView },
 ];
 // Screens that open from a tab and keep it lit. They bring their own title and way back.
@@ -93,6 +93,8 @@ const MORE = [
 const money = (value) => `${Number(value).toFixed(2).replace('.', ',')} $`;
 const app = document.getElementById('app');
 let current = 'today';
+// The chat covers the tabs; its back button returns to where it was opened from.
+let chatBack = 'today';
 
 function aiLine(ai) {
   if (!ai) return 'Wird geprüft';
@@ -130,6 +132,7 @@ function draw() {
       return;
     }
   }
+  if (current === 'chat') return drawChat(app, chatBack);
   const sub = SUB_VIEWS[current];
   const lit = current === 'photo' ? 'today' : sub ? 'more' : current;
   const tab = TABS.find((entry) => entry.id === lit) ?? TABS[0];
@@ -159,10 +162,10 @@ function redrawKeepingPlace() {
 }
 
 function open(id) {
+  if (id === 'chat' && current !== 'chat') chatBack = current;
   current = id;
   draw();
   window.scrollTo(0, 0);
-  if (id === 'chat') showLatest();
 }
 
 function showGate() {
@@ -212,6 +215,7 @@ function start() {
 }
 
 setRedraw(redrawKeepingPlace);
+watchKeyboard();
 setOpener(open);
 
 const FORMS = {
@@ -320,7 +324,12 @@ app.addEventListener('change', (event) => {
 });
 app.addEventListener('input', (event) => {
   saveProfileChange(event);
-  if (event.target.closest?.('#chatForm')) keepDraft(event.target.value);
+  if (event.target.closest?.('#chatForm')) {
+    keepDraft(event.target.value);
+    // The field grows with the text, up to a few lines.
+    event.target.style.height = 'auto';
+    event.target.style.height = `${Math.min(event.target.scrollHeight, 132)}px`;
+  }
 });
 
 // Return sends, Shift and Return makes a new line.

@@ -826,7 +826,6 @@ test('switches between the five tabs without errors', async () => {
   for (const [tab, title] of [
     ['plan', 'Wochenplan'],
     ['shop', 'Einkauf'],
-    ['chat', 'Claude'],
     ['more', 'Mehr'],
     ['today', 'Heute'],
   ]) {
@@ -834,6 +833,14 @@ test('switches between the five tabs without errors', async () => {
     assert.equal(await page.locator('h1').innerText(), title);
     assert.equal(await page.locator('[aria-current="page"]').getAttribute('data-tab'), tab);
   }
+  // The chat has the screen to itself, like in Volumora, and goes back to where it was opened.
+  await page.click('[data-tab="shop"]');
+  await page.click('nav [data-tab="chat"]');
+  assert.equal(await page.locator('.chat-screen h1').innerText(), 'Claude');
+  assert.equal(await page.locator('nav.tabs').count(), 0);
+  assert.equal(await page.locator('.chat-head .back').innerText(), 'Einkauf');
+  await page.click('.chat-head .back');
+  assert.equal(await page.locator('h1').innerText(), 'Einkauf');
   // Each tab shows a drawn icon over its name; the name alone is what a screen reader hears.
   assert.equal(await page.locator('.tabs button svg[aria-hidden="true"]').count(), 5);
   assert.deepEqual(await page.locator('.tabs button').allInnerTexts(), [
@@ -882,6 +889,8 @@ for (const colorScheme of ['light', 'dark']) {
     assert.deepEqual(await check(more.page), []);
     await more.page.click('nav [data-tab="chat"]');
     assert.deepEqual(await check(more.page), []);
+    assert.equal(await more.page.locator('.chat-head .back').innerText(), 'Profil');
+    await more.page.click('.chat-head .back');
     await more.page.click('[data-tab="more"]');
     await more.page.click('#openTaste');
     assert.deepEqual(await check(more.page), []);
@@ -1193,5 +1202,29 @@ test('before the plan starts, Heute offers nothing of it to eat and says when it
   assert.match(await page.locator('#planAhead').innerText(), /kaufst du ein und kochst/);
   assert.equal(await page.locator('#gap').count(), 0);
   assert.equal(await page.locator('[data-action="eatFiller"], [data-action="eat"]').count(), 0);
+  await context.close();
+});
+
+test('an answer lost while the app was in the background is asked for again when it comes back', async () => {
+  const { context, page } = await open({ storage: ready });
+  let first = true;
+  await context.route(`${SERVER}/v1/ai/messages`, (route) => {
+    if (route.request().method() !== 'POST' || !first) return route.fallback();
+    // Never answers, like a connection the iPhone cut while the app was away.
+    first = false;
+  });
+  await page.click('nav [data-tab="chat"]');
+  await page.fill('[name="message"]', 'Hallo');
+  await page.press('[name="message"]', 'Enter');
+  await page.evaluate(() => {
+    let state = 'hidden';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+    document.dispatchEvent(new Event('visibilitychange'));
+    state = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForSelector('.bubble:not(.mine):not(#chatLive)', { timeout: 15000 });
+  assert.equal(await page.locator('.bubble:not(.mine):not(#chatLive)').innerText(), 'Hallo!');
+  assert.equal(await page.locator('.note.error').count(), 0);
   await context.close();
 });
