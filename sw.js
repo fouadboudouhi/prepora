@@ -1,4 +1,4 @@
-const VERSION = 'v12';
+const VERSION = 'v13';
 // Volumora lives on the same domain: only caches with this prefix are ours to touch.
 const PREFIX = 'prepora-';
 const CACHE = `${PREFIX}${VERSION}`;

@@ -532,7 +532,7 @@ export function boxCheck(plan, date, boxes) {
   const frozen = labels
     .filter((label) => label.storage === 'freezer')
     .reduce((sum, label) => sum + label.count, 0);
-  return { total, frozen, short: boxes ? Math.max(0, total - boxes) : 0 };
+  return { total, frozen, short: Number.isFinite(boxes) ? Math.max(0, total - boxes) : 0 };
 }
 
 // "Heute nicht": the app decides by what is safe, so this stays one tap. Changes the plan it is given.
