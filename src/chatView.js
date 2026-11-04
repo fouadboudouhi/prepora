@@ -96,35 +96,99 @@ function recoverInterrupted() {
   failure = new SessionError('interrupted');
 }
 
-export function chatView() {
+const BACK = {
+  today: 'Heute',
+  plan: 'Plan',
+  shop: 'Einkauf',
+  more: 'Mehr',
+  profile: 'Profil',
+  taste: 'Geschmack',
+  recipes: 'Rezepte',
+  supplements: 'Supplements',
+  stock: 'Tiefkühler',
+  photo: 'Foto',
+};
+
+// The chat has the screen to itself, like a messenger: a bar on top, the messages scrolling in between and the field
+// pinned to the bottom, above the keyboard when it is open.
+export function chatView(back = 'today') {
   recoverInterrupted();
   const messages = getChat();
   const empty = !messages.length && !running;
   return `
-    <div class="chat" id="chatLog" role="log">
-      ${
-        empty
-          ? `<p class="sub">Sag einfach, was du brauchst. Claude kennt deinen Plan, dein Profil und deine Vorräte, erstellt Pläne und ändert Einstellungen für dich.</p>
-             <div class="starters">${STARTERS.map((text) => `<button type="button" class="starter" data-action="chatStarter" data-text="${esc(text)}">${esc(text)}</button>`).join('')}</div>`
-          : `${messages.map(messageHtml).join('')}${running ? liveHtml() : ''}`
-      }
-    </div>
-    ${failure ? `<p class="note error" role="alert">${esc(errorText(failure))}</p>` : ''}
-    <form id="chatForm" class="composer" novalidate>
-      <textarea name="message" rows="1" maxlength="2000" enterkeyhint="send" aria-label="Nachricht an Claude" placeholder="Nachricht an Claude"${running ? ' disabled' : ''}>${esc(draft)}</textarea>
-      ${
-        running
-          ? `<button type="button" class="send" data-action="chatStop" aria-label="Anhalten">${icon('stop')}</button>`
-          : `<button type="submit" class="send" aria-label="Senden">${icon('up')}</button>`
-      }
-    </form>
-    ${messages.length && !running ? '<button type="button" class="text-button new-chat" data-action="chatClear">Neues Gespräch</button>' : ''}`;
+    <main class="chat-screen">
+      <header class="chat-head">
+        <button type="button" class="back" data-tab="${esc(back)}">${BACK[back] ?? 'Zurück'}</button>
+        <h1>Claude</h1>
+        ${
+          messages.length && !running
+            ? `<button type="button" class="head-icon" data-action="chatClear" aria-label="Neues Gespräch">${icon('compose')}</button>`
+            : '<span></span>'
+        }
+      </header>
+      <div class="chat-scroll" id="chatScroll" role="log">
+        ${
+          empty
+            ? `<div class="chat-empty">
+                 <p>Sag einfach, was du brauchst. Claude kennt deinen Plan, dein Profil und deine Vorräte, erstellt Pläne und ändert Einstellungen für dich.</p>
+                 <div class="starters">${STARTERS.map((text) => `<button type="button" class="starter" data-action="chatStarter" data-text="${esc(text)}">${esc(text)}</button>`).join('')}</div>
+               </div>`
+            : `${messages.map(messageHtml).join('')}${running ? liveHtml() : ''}`
+        }
+      </div>
+      <div class="chat-foot">
+        ${failure ? `<p class="note error" role="alert">${esc(errorText(failure))}</p>` : ''}
+        <form id="chatForm" class="composer" novalidate>
+          <textarea name="message" rows="1" maxlength="2000" enterkeyhint="send" aria-label="Nachricht an Claude" placeholder="Nachricht an Claude"${running ? ' disabled' : ''}>${esc(draft)}</textarea>
+          ${
+            running
+              ? `<button type="button" class="send" data-action="chatStop" aria-label="Anhalten">${icon('stop')}</button>`
+              : `<button type="submit" class="send" aria-label="Senden">${icon('up')}</button>`
+          }
+        </form>
+      </div>
+    </main>`;
 }
 
-// Scrolls to the newest line after the screen is drawn.
+const NEAR_END = 80;
+const scroller = () => document.getElementById('chatScroll');
+const nearEnd = (box) => box.scrollHeight - box.scrollTop - box.clientHeight < NEAR_END;
+
+// Draws the chat and keeps the place: at the newest line, unless the person scrolled up to read.
+export function drawChat(app, back) {
+  const old = scroller();
+  const keep = old && !nearEnd(old) ? old.scrollTop : null;
+  app.innerHTML = chatView(back);
+  const box = scroller();
+  box.scrollTop = keep ?? box.scrollHeight;
+}
+
 export function showLatest() {
-  const last = document.querySelector('#chatLog > :last-child');
-  if (last && document.getElementById('chatForm')) last.scrollIntoView({ block: 'end' });
+  const box = scroller();
+  if (box) box.scrollTop = box.scrollHeight;
+}
+
+// iOS shifts the page up for the keyboard. The chat fills exactly the part the keyboard leaves, so the field stays
+// right above it and the bar stays on top.
+export function watchKeyboard() {
+  const view = window.visualViewport;
+  if (!view) return;
+  let tallest = 0;
+  window.addEventListener('orientationchange', () => {
+    tallest = 0;
+  });
+  const sync = () => {
+    const root = document.documentElement;
+    const following = scroller() && nearEnd(scroller());
+    tallest = Math.max(tallest, view.height);
+    root.style.setProperty('--keyboard-shift', `${Math.max(0, Math.round(view.offsetTop))}px`);
+    root.style.setProperty('--visible-height', `${Math.round(view.height)}px`);
+    root.classList.toggle('keyboard-open', view.height < tallest - 40);
+    if (following) showLatest();
+  };
+  view.addEventListener('resize', sync);
+  view.addEventListener('scroll', sync);
+  sync();
 }
 
 const restorePlan = (plan) => {
@@ -133,10 +197,13 @@ const restorePlan = (plan) => {
 };
 
 function paintLive() {
+  const box = scroller();
+  const following = box && nearEnd(box);
   const text = document.getElementById('chatLiveText');
   if (text) text.innerHTML = replyHtml(running.text);
   const status = document.getElementById('chatLiveStatus');
   if (status) status.textContent = running.status;
+  if (following) showLatest();
 }
 
 export async function send(text) {
@@ -162,7 +229,7 @@ export async function send(text) {
       })),
       onText: (shown) => {
         running.text = shown;
-        running.status = 'Schreibt …';
+        running.status = shown ? 'Schreibt …' : 'Verbindet neu …';
         paintLive();
       },
       execute: (name, input) => {
@@ -196,7 +263,6 @@ export async function send(text) {
   }
   running = null;
   rerender();
-  showLatest();
 }
 
 export const chatActions = {
