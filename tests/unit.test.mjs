@@ -627,6 +627,7 @@ test('the boxes are counted before the cook day, and a shortage is named', () =>
   );
   assert.deepEqual(boxCheck(plan, START, 10), { total: 14, frozen: 6, short: 4 });
   assert.equal(boxCheck(plan, START, null).short, 0);
+  assert.equal(boxCheck(plan, START, 0).short, 14);
 });
 
 test('a second cook day follows the chosen weekday', () => {
