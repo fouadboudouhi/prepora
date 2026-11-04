@@ -1172,3 +1172,26 @@ test('when Claude cannot answer, the message goes back into the field', async ()
   assert.equal(await page.locator('.bubble').count(), 0);
   await context.close();
 });
+
+test('before the plan starts, Heute offers nothing of it to eat and says when it begins', async () => {
+  const at = new Date();
+  at.setDate(at.getDate() + 3);
+  const start = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+  const plan = {
+    id: 'p',
+    start,
+    shopOn: start,
+    people: 1,
+    recipes: [],
+    fillers: [
+      { id: 'f', name: 'Skyr', when: 'Frühstück', ingredients: [], nutrition: { kcal: 300, protein: 30 } },
+    ],
+    meals: [],
+    cookDays: [{ date: start, minutes: 90, steps: [{ title: 'x', detail: '' }] }],
+  };
+  const { context, page } = await open({ storage: { ...ready, 'prepora-plan': plan } });
+  assert.match(await page.locator('#planAhead').innerText(), /kaufst du ein und kochst/);
+  assert.equal(await page.locator('#gap').count(), 0);
+  assert.equal(await page.locator('[data-action="eatFiller"], [data-action="eat"]').count(), 0);
+  await context.close();
+});

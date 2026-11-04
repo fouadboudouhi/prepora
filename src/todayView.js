@@ -132,6 +132,8 @@ export function todayView() {
   const thaw = plan.meals.filter((meal) => meal.thawOn === today && !meal.eaten && !meal.skipped);
   const upcoming = plan.cookDays.find((day) => day.date > today && !day.done);
   const lastEaten = justEaten && plan.meals.find((meal) => meal.id === justEaten);
+  // Before the first cook day nothing of the plan is bought or cooked yet, so nothing of it can be eaten.
+  const early = today < plan.start;
 
   return `
     ${
@@ -150,9 +152,15 @@ export function todayView() {
             <button type="button" class="primary" data-action="eat" data-id="${esc(next.id)}">Gegessen</button>
             <button type="button" class="text-button" data-action="skipMeal" data-id="${esc(next.id)}">Heute nicht</button>
           </section>`
-        : !cookToday
-          ? `<p class="note">Für heute ist nichts mehr offen.</p>`
-          : ''
+        : early
+          ? `<p class="note" id="planAhead">${
+              plan.shopOn && plan.shopOn !== plan.start
+                ? `Einkauf am ${esc(dayLabel(plan.shopOn))}, Kochen am ${esc(dayLabel(plan.start))}.`
+                : `Am ${esc(dayLabel(plan.start))} kaufst du ein und kochst.`
+            } Ab dem Tag danach isst du aus den Boxen, bis dahin wie gewohnt.</p>`
+          : !cookToday
+            ? `<p class="note">Für heute ist nichts mehr offen.</p>`
+            : ''
     }
     ${
       lastEaten
@@ -166,7 +174,7 @@ export function todayView() {
     }
     ${notice ? `<p class="note" id="notice" role="status">${esc(notice)}</p>` : ''}
     ${progress(plan, today, targets)}
-    ${gapBlock(plan, today, targets)}
+    ${early ? '' : gapBlock(plan, today, targets)}
     ${supplementBlock(today)}
     ${photoButton}
     <div class="list">
