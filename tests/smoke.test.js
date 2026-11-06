@@ -687,12 +687,15 @@ test('from one tap to a week: plan, list, cook day, boxes, freezer, eating, rati
   assert.match(await page.locator('#recipeList').innerText(), /teils geschätzt/);
 
   await page.click('[data-tab="shop"]');
-  const list = await page.locator('.page').innerText();
+  const list = (await page.locator('.check').allInnerTexts()).join('\n');
   assert.match(list, /Packung/);
   assert.equal((list.match(/\bReis\b/g) ?? []).length, 1, 'same food is added up');
+  const first = await page.locator('.check .block').first().innerText();
   await page.locator('.check').first().click();
   assert.match(await page.locator('#shopCount').innerText(), /von/);
-  assert.equal(await page.locator('.check').first().getAttribute('aria-pressed'), 'true');
+  // What is in the cart moves down, out of the way.
+  assert.equal(await page.locator('#inCart .check .block').innerText(), first);
+  assert.equal(await page.locator('#inCart .check').getAttribute('aria-pressed'), 'true');
 
   await page.click('[data-tab="plan"]');
   await page.click('[data-action="startCook"]');
@@ -1485,5 +1488,72 @@ test('ZXing reads a real EAN-13 the way Safari would need it', async () => {
     return decode(canvas);
   });
   assert.equal(code, '4006381333931');
+  await context.close();
+});
+
+const bigPlan = (yesterday, today) => ({
+  id: 'big',
+  start: yesterday,
+  shopOn: yesterday,
+  settled: true,
+  people: 1,
+  recipes: [
+    {
+      id: 'chili',
+      name: 'Chili',
+      ingredients: [],
+      nutrition: { kcal: 1000, protein: 70, fat: 30, carbs: 100 },
+    },
+    {
+      id: 'curry',
+      name: 'Curry',
+      ingredients: [],
+      nutrition: { kcal: 950, protein: 80, fat: 30, carbs: 90 },
+    },
+  ],
+  fillers: [],
+  meals: [
+    { id: 'y1', date: yesterday, meal: 'Mittagessen', recipeId: 'chili', storage: 'fridge' },
+    { id: 'y2', date: yesterday, meal: 'Abendessen', recipeId: 'curry', storage: 'fridge' },
+    { id: 't1', date: today, meal: 'Mittagessen', recipeId: 'chili', storage: 'fridge' },
+    { id: 'f1', date: today, meal: 'Abendessen', recipeId: 'curry', storage: 'freezer' },
+  ],
+  cookDays: [{ date: yesterday, minutes: 90, steps: [{ title: 'x', detail: '' }], done: true }],
+});
+
+test('Heute asks once whether yesterday went as planned, and a box not eaten stops counting', async () => {
+  const plan = bigPlan(dayOffset(-1), dayOffset(0));
+  const { context, page } = await open({ storage: { ...ready, 'prepora-plan': plan } });
+  assert.match(await page.locator('#yesterday').innerText(), /Gestern alles gegessen\?[\s\S]*Chili, Curry/);
+  await page.click('[data-action="yesterdayNo"]');
+  await page.click('#yesterday [data-action="missMeal"][data-id="y2"]');
+  await page.click('[data-action="confirmYesterday"]');
+  assert.equal(await page.locator('#yesterday').count(), 0);
+  const meals = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')).meals);
+  assert.equal(meals.find((meal) => meal.id === 'y1').eaten, dayOffset(-1));
+  assert.equal(meals.find((meal) => meal.id === 'y2').missed, true);
+  await page.click('#weekRow');
+  assert.match(await page.locator('#weekAverage').innerText(), /Schnitt aus 1 Tag[\s\S]*ca\. 1\.000 kcal/);
+  await context.close();
+});
+
+test('very large boxes bring the offer to cook breakfast too, and the freezer says what is planned', async () => {
+  const plan = bigPlan(dayOffset(-1), dayOffset(0));
+  const stock = [
+    { id: 's1', recipeId: 'curry', name: 'Curry', portions: 2, frozenAt: dayOffset(-1), nutrition: null },
+  ];
+  const { context, page } = await open({
+    storage: { ...ready, 'prepora-plan': plan, 'prepora-stock': stock },
+  });
+  await page.click('[data-tab="plan"]');
+  assert.match(await page.locator('#bigBoxes').innerText(), /ca\. 1\.000 kcal/);
+  await page.click('[data-action="addBreakfast"]');
+  assert.match(await page.locator('#bigBoxes').innerText(), /ab dem nächsten Plan/);
+  const profile = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-profile')));
+  assert.deepEqual(profile.meals, ['Frühstück', 'Mittagessen', 'Abendessen']);
+  await page.click('[data-tab="more"]');
+  assert.match(await page.locator('#openStock').innerText(), /2 Portionen, 1 eingeplant/);
+  await page.click('#openStock');
+  assert.match(await page.locator('#stockList').innerText(), /1 eingeplant für/);
   await context.close();
 });

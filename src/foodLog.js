@@ -1,7 +1,7 @@
 // Tracking what was eaten: the boxes ticked off, and everything else said in a few words. Claude reads the words; for
 // foods the app knows, the app does the arithmetic itself, the rest is Claude's estimate and says so.
 import { FOOD_IDS, nutritionOf } from './foods.js';
-import { mealName, mealNutrition } from './planner.js';
+import { localDay, mealName, mealNutrition } from './planner.js';
 
 export const LOG_SCHEMA = {
   type: 'object',
@@ -72,22 +72,26 @@ const sum = (entries) =>
     KEYS.map((key) => [key, entries.reduce((total, entry) => total + (entry[key] ?? 0), 0)])
   );
 
-// Everything eaten on one day: boxes by the day they were eaten, plus the entries of that day.
-export function dayIntake(date, plans, extras) {
+// Everything eaten on one day: boxes by the day they were eaten, plus the entries of that day. A box of a day that
+// is over counts as eaten unless it was set aside or marked as not eaten: forgetting the tick should not make the
+// week look 1.000 kcal lighter.
+export function dayIntake(date, plans, extras, today = localDay()) {
+  const counts = (meal) =>
+    meal.eaten === date ||
+    (!meal.eaten && !meal.skipped && !meal.missed && meal.date === date && date < today);
   const seen = new Set();
   const boxes = plans
     .filter((plan) => plan && !seen.has(plan.id) && seen.add(plan.id))
     .flatMap((plan) =>
-      (plan.meals ?? [])
-        .filter((meal) => meal.eaten === date)
-        .map((meal) => {
-          const nutrition = mealNutrition(plan, meal) ?? {};
-          return {
-            kind: 'box',
-            name: `${meal.meal}: ${mealName(plan, meal)}`,
-            ...Object.fromEntries(KEYS.map((key) => [key, Math.round(nutrition[key] ?? 0)])),
-          };
-        })
+      (plan.meals ?? []).filter(counts).map((meal) => {
+        const nutrition = mealNutrition(plan, meal) ?? {};
+        return {
+          kind: 'box',
+          name: `${meal.meal}: ${mealName(plan, meal)}`,
+          ...(meal.eaten ? {} : { assumed: true }),
+          ...Object.fromEntries(KEYS.map((key) => [key, Math.round(nutrition[key] ?? 0)])),
+        };
+      })
     );
   const own = (extras[date] ?? []).map((entry, index) => ({
     kind: 'extra',
@@ -118,7 +122,7 @@ export function recentFoods(extras, today, limit = 6) {
     .map(({ entry }) => entry);
 }
 
-const shift = (date, days) => {
+export const shift = (date, days) => {
   const at = new Date(`${date}T12:00:00`);
   at.setDate(at.getDate() + days);
   return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
@@ -126,7 +130,9 @@ const shift = (date, days) => {
 
 // The last seven days up to today. The average leaves out today, which is not over yet, and days with nothing in them.
 export function weekIntake(today, plans, extras) {
-  const days = Array.from({ length: 7 }, (_, index) => dayIntake(shift(today, index - 6), plans, extras));
+  const days = Array.from({ length: 7 }, (_, index) =>
+    dayIntake(shift(today, index - 6), plans, extras, today)
+  );
   const full = days.filter((day) => day.date < today && day.entries.length);
   const average = full.length
     ? Object.fromEntries(

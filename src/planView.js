@@ -12,7 +12,7 @@ import {
 import { askClaudeJson } from './ai.js';
 import { icon } from './icons.js';
 import { dailyTargets } from './nutrition.js';
-import { getProfile } from './profile.js';
+import { MEALS, getProfile, saveProfile } from './profile.js';
 import { boxCheck, mealName, mealNutrition, weekdayOf } from './planner.js';
 import { shrink } from './photo.js';
 import { dayLabel, errorText, esc, number, rerender } from './ui.js';
@@ -83,6 +83,28 @@ const busyBlock = () => `
     <p>Das dauert ein bis drei Minuten. Du kannst die App solange normal benutzen, sie aber nicht schließen.</p>
   </section>`;
 
+// Two boxes a day for a high target make each box very large. Cooking breakfast too spreads it over three.
+const BIG_BOX = 900;
+let breakfastAdded = false;
+function bigBoxNote(plan) {
+  if (breakfastAdded)
+    return '<p class="note" id="bigBoxes" role="status">Frühstück kommt ab dem nächsten Plan dazu.</p>';
+  const profile = getProfile();
+  if (profile.meals?.includes('Frühstück') || profile.bigBoxesOk) return '';
+  const boxes = plan.meals
+    .filter((meal) => meal.recipeId)
+    .map((meal) => mealNutrition(plan, meal)?.kcal ?? 0);
+  const average = boxes.length ? boxes.reduce((sum, kcal) => sum + kcal, 0) / boxes.length : 0;
+  if (average < BIG_BOX) return '';
+  return `
+    <section class="card" id="bigBoxes">
+      <h2>Große Boxen</h2>
+      <p>Jede Box hat ca. ${number(Math.round(average / 50) * 50)} kcal. Das ist viel auf einmal und passt oft nicht in eine normale Box. Kochst du Frühstück mit, verteilt es sich auf drei kleinere Boxen am Tag.</p>
+      <button type="button" class="primary" data-action="addBreakfast">Ab nächster Woche Frühstück mitkochen</button>
+      <button type="button" class="text-button" data-action="keepBigBoxes">Passt so</button>
+    </section>`;
+}
+
 export function planView() {
   const targets = dailyTargets(getProfile());
   if (!targets)
@@ -124,6 +146,7 @@ export function planView() {
           </section>`
         : ''
     }
+    ${bigBoxNote(plan)}
     <div class="list" id="weekList">
       ${days
         .map((date) => {
@@ -189,6 +212,19 @@ export async function readFridgePhoto(file) {
 }
 
 export const planActions = {
+  addBreakfast: () => {
+    const profile = getProfile();
+    saveProfile({
+      ...profile,
+      meals: MEALS.filter((meal) => meal === 'Frühstück' || profile.meals?.includes(meal)),
+    });
+    breakfastAdded = true;
+    rerender();
+  },
+  keepBigBoxes: () => {
+    saveProfile({ ...getProfile(), bigBoxesOk: true });
+    rerender();
+  },
   newWeek: () => newWeek(),
   repeatWeek: () => repeatBestWeek(),
   replaceRecipe: (el) => replaceRecipe(el.dataset.id),

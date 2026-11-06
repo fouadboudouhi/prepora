@@ -19,8 +19,10 @@ import {
   placeStock,
   repeatPlan,
   shopDate,
+  carryOver,
   shoppingCost,
   shoppingList,
+  shoppingNotes,
   skipMeal,
 } from '../src/planner.js';
 import { blockAlarms, planAlarms } from '../src/push.js';
@@ -281,10 +283,67 @@ test('the shopping list adds up the same food, in whole packs, and says what sta
     ['Fleisch und Fisch', 'Vorrat', 'Prüfen, ob da']
   );
   const [hack] = groups[0].items;
-  assert.equal(hack.detail, '2 Packungen à 500 g, 300 g bleiben übrig');
+  assert.equal(hack.detail, '2 Packungen à 500 g');
   const reis = groups[1].items;
   assert.equal(reis.length, 1);
-  assert.equal(reis[0].detail, '1 Packung à 1 kg, 300 g bleiben übrig');
+  assert.equal(reis[0].detail, '1 Packung à 1 kg');
+});
+
+test('what is at home comes off the list, and what the packs leave goes into the next plan', () => {
+  const plan = {
+    shopOn: '2026-11-07',
+    recipes: [
+      {
+        name: 'A',
+        ingredients: [
+          food('Reis', 'reis', 400, 1000),
+          food('Hack', 'rinderhack', 700, 500, 'Fleisch und Fisch'),
+          food('Nudeln', 'nudeln', 300, 500),
+        ],
+      },
+    ],
+    pantry: [
+      { id: 'reis', name: 'Reis', grams: 600, category: 'Vorrat', since: '2026-10-31' },
+      { id: 'nudeln', name: 'Nudeln', grams: 100, category: 'Vorrat', since: '2026-10-31' },
+      { id: 'linsen', name: 'Linsen', grams: 250, category: 'Vorrat', since: '2026-10-31' },
+      { id: 'pute', name: 'Pute', grams: 300, category: 'Fleisch und Fisch', since: '2026-10-31' },
+    ],
+  };
+  const names = shoppingList(plan).flatMap((group) =>
+    group.items.map((item) => `${item.name}: ${item.detail}`)
+  );
+  // Reis is at home in full, Nudeln partly.
+  assert.deepEqual(names, ['Hack: 2 Packungen à 500 g', 'Nudeln: 1 Packung à 500 g, 100 g hast du noch']);
+  assert.deepEqual(shoppingNotes(plan), {
+    fromHome: [
+      { name: 'Reis', grams: 400 },
+      { name: 'Nudeln', grams: 100 },
+    ],
+    left: [
+      { name: 'Hack', grams: 300 },
+      { name: 'Nudeln', grams: 300 },
+    ],
+  });
+  const next = carryOver(plan, '2026-11-08');
+  assert.deepEqual(
+    next.map(({ id, grams, since }) => [id, grams, since]),
+    [
+      ['reis', 200, '2026-10-31'],
+      ['rinderhack', 300, '2026-11-07'],
+      ['nudeln', 300, '2026-11-07'],
+      ['linsen', 250, '2026-10-31'],
+    ]
+  );
+  // Fresh meat from a week before is gone by now; the cupboard stays.
+  assert.equal(
+    next.some((entry) => entry.id === 'pute'),
+    false
+  );
+  assert.equal(
+    carryOver(plan, '2026-11-20').some((entry) => entry.id === 'rinderhack'),
+    false
+  );
+  assert.equal(shoppingCost(plan), 0);
 });
 
 test('freezer portions take the last meals of the week', () => {
@@ -584,7 +643,7 @@ test('one shop a week: last shop day before cooking, with fillers, staples and s
   const groups = shoppingList(plan, [{ id: 'k', name: 'Kreatin' }]);
   const names = groups.map((group) => group.name);
   assert.deepEqual(names, ['Kühlregal', 'Vorrat', 'Prüfen, ob da', 'Supplements']);
-  assert.equal(groups[0].items[0].detail, '3 Packungen à 500 g, 300 g bleiben übrig');
+  assert.equal(groups[0].items[0].detail, '3 Packungen à 500 g');
   assert.equal(groups[2].items[0].name, 'Salz');
   assert.equal(groups[3].items[0].id, 'supplement-k');
   assert.equal(shoppingCost(plan), Math.round(2 + 4.5 + 2));
@@ -749,7 +808,7 @@ test('a day counts boxes by the day they were eaten and entries with their amoun
   const extras = {
     '2026-11-06': [{ name: 'Riegel', kcal: 200, protein: 20, fat: 8, carbs: 20, factor: 1.5 }],
   };
-  const day = dayIntake('2026-11-06', [plan, plan], extras);
+  const day = dayIntake('2026-11-06', [plan, plan], extras, '2026-11-06');
   assert.deepEqual(day.total, { kcal: 900, protein: 70, fat: 32, carbs: 80 });
   assert.equal(day.entries[0].name, 'Mittagessen: Chili');
   assert.equal(day.entries[1].id, 'x-0');
@@ -828,4 +887,20 @@ test('an unknown barcode is no product, and only the number goes out', async () 
     asked,
     /^https:\/\/world\.openfoodfacts\.org\/api\/v2\/product\/4006381333931\.json\?fields=[a-z_,0-9]+$/
   );
+});
+
+test('a box of a day that is over counts as eaten, unless it was marked as not eaten', () => {
+  const plan = {
+    id: 'p',
+    recipes: [{ id: 'r', name: 'Chili', nutrition: { kcal: 600, protein: 40, fat: 20, carbs: 50 } }],
+    meals: [
+      { id: '1', date: '2026-11-05', meal: 'Mittagessen', recipeId: 'r' },
+      { id: '2', date: '2026-11-05', meal: 'Abendessen', recipeId: 'r', missed: true },
+      { id: '3', date: '2026-11-06', meal: 'Mittagessen', recipeId: 'r' },
+    ],
+  };
+  const past = dayIntake('2026-11-05', [plan], {}, '2026-11-06');
+  assert.equal(past.total.kcal, 600);
+  assert.equal(past.entries[0].assumed, true);
+  assert.equal(dayIntake('2026-11-06', [plan], {}, '2026-11-06').total.kcal, 0);
 });

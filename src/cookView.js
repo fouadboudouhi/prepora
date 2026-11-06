@@ -1,8 +1,18 @@
 // Der Kochmodus: all recipes as one line of steps. A step with a timer starts it with the tap that moves on, so hands
 // stay free. Timers keep their end time, so a locked phone never makes them wrong; the server rings when it is locked.
-import { getPlan, getStock, saveStock, savePlan, scheduleReminders, updateBlocks } from './actions.js';
+import {
+  getPantry,
+  getPlan,
+  getStock,
+  savePantry,
+  saveStock,
+  savePlan,
+  scheduleReminders,
+  settleShopping,
+  updateBlocks,
+} from './actions.js';
 import { askClaude } from './ai.js';
-import { boxLabels, recipeOf } from './planner.js';
+import { boxLabels, isPerishable, localDay, recipeOf } from './planner.js';
 import { enablePush, setAlarms } from './push.js';
 import { read, write } from './store.js';
 import { errorText, esc, rerender } from './ui.js';
@@ -119,9 +129,31 @@ function labelsView(plan, current) {
           )
           .join('')}
       </div>
+      ${leftoverBlock()}
       ${timersBlock(current.timers)}
       <button type="button" class="primary" data-action="finishCook">Fertig</button>
     </main>`;
+}
+
+// Fresh food the packs left over would spoil before the next plan. Frozen raw, it keeps and the next plan uses it.
+function leftoverBlock() {
+  settleShopping();
+  const fresh = getPantry().filter(isPerishable);
+  if (!fresh.length) return '';
+  return `
+    <section id="leftovers">
+      <h2 class="section">Übrig vom Einkauf</h2>
+      <p class="sub">Roh einfrieren, dann hält es Monate und kommt in einen der nächsten Pläne.</p>
+      <div class="list">${fresh
+        .map(
+          (entry) => `
+          <div class="row">
+            <span class="grow"><span class="block">${esc(entry.name)}</span><span class="muted small">ca. ${entry.grams} g</span></span>
+            <button type="button" class="text-button" data-action="freezeLeftover" data-id="${esc(entry.id)}">Eingefroren</button>
+          </div>`
+        )
+        .join('')}</div>
+    </section>`;
 }
 
 export function cookView() {
@@ -215,6 +247,14 @@ function freezeToday(plan, date) {
 }
 
 export const cookActions = {
+  freezeLeftover: (el) => {
+    savePantry(
+      getPantry().map((entry) =>
+        entry.id === el.dataset.id ? { ...entry, category: 'Tiefkühl', since: localDay() } : entry
+      )
+    );
+    rerender();
+  },
   // One tap: this is also the moment a phone lets the app ask for reminders, and the sound may start.
   startCook: (el) => {
     unlockSound();

@@ -1,5 +1,5 @@
 // The shell: sign-in with the Volumora account, four tabs, and the full-screen cook day above them.
-import { applyTrend, getStock, updateBlocks } from './actions.js';
+import { applyTrend, getPlan, getStock, settleShopping, updateBlocks } from './actions.js';
 import { chatActions, drawChat, keepDraft, send, watchKeyboard } from './chatView.js';
 import { askHelper, cookActions, cookView, cooking, startTicking } from './cookView.js';
 import { planActions, planView, readFridgePhoto } from './planView.js';
@@ -10,7 +10,7 @@ import { icon } from './icons.js';
 import { pushOn } from './push.js';
 import { getSession, refreshMe, signIn, signOut } from './session.js';
 import { shopActions, shopView } from './shopView.js';
-import { addStock, stockActions, stockView } from './stockView.js';
+import { addStock, plannedOf, stockActions, stockView } from './stockView.js';
 import { addSupplement, supplementActions, supplementsView } from './supplementsView.js';
 import { clearAfterSignOut, startSync, syncNow } from './sync.js';
 import { tasteActions, tasteView } from './tasteView.js';
@@ -99,8 +99,14 @@ const MORE = [
     icon: 'snow',
     label: 'Tiefkühler',
     hint: () => {
-      const portions = getStock().reduce((sum, item) => sum + item.portions, 0);
-      return `${number(portions)} ${portions === 1 ? 'Portion' : 'Portionen'}`;
+      const stock = getStock();
+      const portions = stock.reduce((sum, item) => sum + item.portions, 0);
+      const people = getPlan()?.people ?? 1;
+      const planned = stock.reduce(
+        (sum, item) => sum + Math.min(item.portions, plannedOf(item).length * people),
+        0
+      );
+      return `${number(portions)} ${portions === 1 ? 'Portion' : 'Portionen'}${planned ? `, ${number(planned)} eingeplant` : ''}`;
     },
   },
 ];
@@ -223,7 +229,8 @@ function refreshAccount() {
   updateFromVolumora()
     .catch(() => false)
     .then((changed) => {
-      if (applyTrend() || changed) redrawKeepingPlace();
+      const settled = settleShopping();
+      if (applyTrend() || settled || changed) redrawKeepingPlace();
     });
   updateBlocks();
 }

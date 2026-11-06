@@ -8,12 +8,13 @@ import {
   getSupplements,
   rate,
   removeExtra,
+  savePlan,
   saveSupplements,
   setExtraFactor,
   skip,
 } from './actions.js';
 import { askClaudeJson } from './ai.js';
-import { LOG_SCHEMA, LOG_SYSTEM, dayIntake, entryFrom, recentFoods, weekIntake } from './foodLog.js';
+import { LOG_SCHEMA, LOG_SYSTEM, dayIntake, entryFrom, recentFoods, shift, weekIntake } from './foodLog.js';
 import { dailyTargets, GOALS } from './nutrition.js';
 import { icon } from './icons.js';
 import { getProfile } from './profile.js';
@@ -117,6 +118,39 @@ function logBlock(today) {
           : ''
       }
       ${eaten.length ? `<div class="list" id="eatenList">${eaten.map(entryRow).join('')}</div>` : ''}
+    </section>`;
+}
+
+// Yesterday's boxes count as eaten anyway; this asks once, so a box that was not eaten does not count.
+let yesterdayOpen = false;
+const unconfirmed = (plan, today) => {
+  const yesterday = shift(today, -1);
+  return (plan?.meals ?? []).filter(
+    (meal) => meal.date === yesterday && !meal.eaten && !meal.skipped && !meal.missed
+  );
+};
+function yesterdayBlock(plan, today) {
+  const open = unconfirmed(plan, today);
+  if (!open.length) return '';
+  return `
+    <section class="card" id="yesterday">
+      <h2>Gestern alles gegessen?</h2>
+      <p>${esc(open.map((meal) => mealName(plan, meal)).join(', '))}</p>
+      ${
+        yesterdayOpen
+          ? `<div class="list">${open
+              .map(
+                (meal) => `
+                <div class="row"><span class="grow">${esc(meal.meal)}: ${esc(mealName(plan, meal))}</span>
+                  <button type="button" class="text-button" data-action="missMeal" data-id="${esc(meal.id)}">Nicht gegessen</button></div>`
+              )
+              .join('')}</div>
+             <button type="button" class="primary" data-action="confirmYesterday">Der Rest stimmt</button>`
+          : `<div class="two">
+               <button type="button" class="primary" data-action="confirmYesterday">Ja</button>
+               <button type="button" class="secondary" data-action="yesterdayNo">Nicht alles</button>
+             </div>`
+      }
     </section>`;
 }
 
@@ -288,6 +322,7 @@ export function todayView() {
         : ''
     }
     ${notice ? `<p class="note" id="notice" role="status">${esc(notice)}</p>` : ''}
+    ${yesterdayBlock(plan, today)}
     ${progress(plan, today, targets)}
     ${logBlock(today)}
     ${photoButton}
@@ -316,7 +351,31 @@ export function todayView() {
     </div>`;
 }
 
+const changeMeals = (change) => {
+  const plan = getPlan();
+  if (!plan) return;
+  change(plan);
+  savePlan(plan);
+  rerender();
+};
+
 export const todayActions = {
+  confirmYesterday: () =>
+    changeMeals((plan) => {
+      unconfirmed(plan, localDay()).forEach((meal) => {
+        meal.eaten = meal.date;
+      });
+      yesterdayOpen = false;
+    }),
+  yesterdayNo: () => {
+    yesterdayOpen = true;
+    rerender();
+  },
+  missMeal: (el) =>
+    changeMeals((plan) => {
+      const meal = plan.meals.find((entry) => entry.id === el.dataset.id);
+      if (meal) meal.missed = true;
+    }),
   logAgain: (el) => {
     const entry = recentFoods(getAllExtras(), localDay(), 50).find((item) => item.name === el.dataset.name);
     if (!entry) return;
