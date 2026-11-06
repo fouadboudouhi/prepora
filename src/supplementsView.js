@@ -1,6 +1,7 @@
 // Supplements: the person's own list, and Claude's judgement of what is worth taking for them, including "nothing".
 import { getPlan, getSupplements, saveSupplements } from './actions.js';
 import { askClaudeJson } from './ai.js';
+import { icon } from './icons.js';
 import { dailyTargets, GOALS } from './nutrition.js';
 import { getProfile } from './profile.js';
 import { errorText, esc, rerender } from './ui.js';
@@ -117,18 +118,16 @@ export function supplementsView() {
               (item) => `
               <div class="row">
                 <span class="grow"><span class="block">${esc(item.name)}</span><span class="muted small">${esc(item.dose)}</span></span>
-                <button type="button" class="text-button" data-action="dropSupplement" data-id="${esc(item.id)}" aria-label="${esc(item.name)} entfernen">Entfernen</button>
+                <button type="button" class="mini" data-action="dropSupplement" data-id="${esc(item.id)}" aria-label="${esc(item.name)} entfernen">${icon('close')}</button>
               </div>`
             )
             .join('')}</div>`
         : ''
     }
-    <form id="supplementAdd" class="inline-form" novalidate>
-      <div class="fields two">
-        <label class="field">Name<input name="name" type="text" maxlength="60" placeholder="Kreatin"></label>
-        <label class="field">Menge<input name="dose" type="text" maxlength="40" placeholder="3 g"></label>
-      </div>
-      <button type="submit" class="secondary">Eintragen</button>
+    <form id="supplementAdd" class="composer add-line" novalidate>
+      <input name="name" type="text" maxlength="60" placeholder="Was nimmst du? Kreatin" aria-label="Supplement">
+      <input name="dose" type="text" maxlength="40" placeholder="3 g" aria-label="Menge" class="dose">
+      <button type="submit" class="send" aria-label="Eintragen">${icon('plus')}</button>
     </form>
     <button type="button" class="primary spaced" data-action="askAdvice"${state.busy ? ' disabled' : ''}>${state.busy ? 'Claude überlegt …' : 'Was passt zu mir?'}</button>
     ${state.error ? `<p class="error" role="alert">${esc(errorText(state.error))}</p>` : ''}
