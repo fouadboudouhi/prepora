@@ -21,6 +21,8 @@ if (!localStorage.getItem('prepora-session')) {
       weight: 80,
       activity: 'medium',
       meals: ['Mittagessen', 'Abendessen'],
+      cookDays: 2,
+      cookWeekday2: 3,
     })
   );
 }
@@ -35,7 +37,17 @@ const food = (name, id, grams, category, packGrams, packEuro, per100 = [0, 0, 0,
   per100: { kcal: per100[0], protein: per100[1], fat: per100[2], carbs: per100[3] },
 });
 
-const RECIPES = [
+const oil = () => food('Olivenöl', 'olivenoel', 40, 'Vorrat', 500, 4.5);
+const step = (recipeId, title, detail, timerMinutes = 0, timerName = '') => ({
+  recipeId,
+  title,
+  detail,
+  timerMinutes,
+  timerName,
+});
+
+// Two cook days, three dishes each: Sunday for the start of the week, Wednesday for the rest.
+const FIRST = [
   {
     id: 'chili',
     name: 'Chili con Carne mit Reis',
@@ -44,14 +56,14 @@ const RECIPES = [
     reheat: '3 Minuten Mikrowelle, einmal umrühren',
     twists: ['Mit Limette und Koriander', 'Mit einem Klecks Skyr'],
     ingredients: [
-      food('Olivenöl', 'olivenoel', 80, 'Vorrat', 500, 4.5),
-      food('Rinderhack mager', 'rinderhack_mager', 1450, 'Fleisch und Fisch', 500, 4.5),
-      food('Kidneybohnen', 'kidneybohnen_dose', 1150, 'Vorrat', 400, 0.9),
-      food('Mais', 'mais_dose', 400, 'Vorrat', 280, 0.9),
-      food('Gehackte Tomaten', 'tomaten_dose', 1150, 'Vorrat', 400, 0.7),
-      food('Zwiebeln', 'zwiebeln', 450, 'Gemüse und Obst', 1000, 1.3),
-      food('Paprika', 'paprika', 600, 'Gemüse und Obst', 500, 2.5),
-      food('Reis', 'reis', 1700, 'Vorrat', 1000, 1.9),
+      oil(),
+      food('Rinderhack mager', 'rinderhack_mager', 560, 'Fleisch und Fisch', 500, 4.5),
+      food('Kidneybohnen', 'kidneybohnen_dose', 600, 'Vorrat', 400, 0.9),
+      food('Mais', 'mais_dose', 210, 'Vorrat', 280, 0.9),
+      food('Gehackte Tomaten', 'tomaten_dose', 600, 'Vorrat', 400, 0.7),
+      food('Zwiebeln', 'zwiebeln', 190, 'Gemüse und Obst', 1000, 1.3),
+      food('Paprika', 'paprika', 220, 'Gemüse und Obst', 500, 2.5),
+      food('Reis', 'reis', 640, 'Vorrat', 1000, 1.9),
     ],
   },
   {
@@ -62,12 +74,12 @@ const RECIPES = [
     reheat: '2–3 Minuten Mikrowelle, etwas Wasser dazu',
     twists: ['Mit frischem Spinat', 'Mit gerösteten Cashews'],
     ingredients: [
-      food('Olivenöl', 'olivenoel', 80, 'Vorrat', 500, 4.5),
-      food('Hähnchenbrust', 'haehnchenbrust', 1750, 'Fleisch und Fisch', 600, 6.5),
-      food('Kokosmilch light', 'kokosmilch', 600, 'Vorrat', 400, 1.8),
-      food('Currypaste', 'currypaste', 60, 'Vorrat', 110, 2.3),
-      food('Brokkoli', 'brokkoli', 850, 'Gemüse und Obst', 500, 1.8),
-      food('Basmatireis', 'basmatireis', 1700, 'Vorrat', 1000, 2.5),
+      oil(),
+      food('Hähnchenbrust', 'haehnchenbrust', 680, 'Fleisch und Fisch', 600, 6.5),
+      food('Kokosmilch light', 'kokosmilch', 300, 'Vorrat', 400, 1.8),
+      food('Currypaste', 'currypaste', 30, 'Vorrat', 110, 2.3),
+      food('Brokkoli', 'brokkoli', 380, 'Gemüse und Obst', 500, 1.8),
+      food('Basmatireis', 'basmatireis', 640, 'Vorrat', 1000, 2.5),
     ],
   },
   {
@@ -78,28 +90,102 @@ const RECIPES = [
     reheat: '2 Minuten Mikrowelle oder kalt als Salat',
     twists: ['Mit Basilikum-Pesto'],
     ingredients: [
-      food('Olivenöl', 'olivenoel', 80, 'Vorrat', 500, 4.5),
-      food('Putenbrust', 'putenbrust', 1300, 'Fleisch und Fisch', 450, 5.5),
-      food('Vollkornnudeln', 'vollkornnudeln', 1400, 'Vorrat', 500, 1.3),
-      food('Zucchini', 'zucchini', 700, 'Gemüse und Obst', 500, 1.5),
-      food('Kirschtomaten', 'tomaten', 600, 'Gemüse und Obst', 250, 1.6),
-      food('Feta', 'feta', 300, 'Kühlregal', 200, 1.9),
+      oil(),
+      food('Putenbrust', 'putenbrust', 490, 'Fleisch und Fisch', 450, 5.5),
+      food('Vollkornnudeln', 'vollkornnudeln', 520, 'Vorrat', 500, 1.3),
+      food('Zucchini', 'zucchini', 300, 'Gemüse und Obst', 500, 1.5),
+      food('Kirschtomaten', 'tomaten', 220, 'Gemüse und Obst', 250, 1.6),
+      food('Feta', 'feta', 150, 'Kühlregal', 200, 1.9),
+    ],
+  },
+];
+const SECOND = [
+  {
+    id: 'teriyaki',
+    name: 'Teriyaki-Hähnchen mit Reis und Brokkoli',
+    fridgeDays: 4,
+    freezes: true,
+    reheat: '2 Minuten Mikrowelle, Sesam frisch darüber',
+    twists: ['Mit Frühlingszwiebeln', 'Mit Chiliflocken'],
+    ingredients: [
+      oil(),
+      food('Hähnchenschenkel ohne Haut', 'haehnchenschenkel', 930, 'Tiefkühl', 1000, 6.9),
+      food('Sojasauce', 'sojasauce', 100, 'Vorrat', 250, 1.9),
+      food('Honig', 'honig', 50, 'Vorrat', 500, 3.5),
+      food('Sesam', 'sesam', 20, 'Vorrat', 250, 1.6),
+      food('Brokkoli', 'brokkoli', 580, 'Tiefkühl', 750, 1.9),
+      food('Reis', 'reis', 980, 'Vorrat', 1000, 1.9),
+    ],
+  },
+  {
+    id: 'dal',
+    name: 'Rotes Linsen-Dal mit Spinat',
+    fridgeDays: 5,
+    freezes: true,
+    reheat: '3 Minuten Mikrowelle, mit Joghurt servieren',
+    twists: ['Mit griechischem Joghurt', 'Mit Zitrone'],
+    ingredients: [
+      oil(),
+      food('Rote Linsen', 'rote_linsen', 580, 'Vorrat', 500, 2.2),
+      food('Kokosmilch light', 'kokosmilch', 460, 'Vorrat', 400, 1.8),
+      food('Gehackte Tomaten', 'tomaten_dose', 460, 'Vorrat', 400, 0.7),
+      food('Blattspinat', 'spinat', 520, 'Tiefkühl', 450, 1.5),
+      food('Basmatireis', 'basmatireis', 700, 'Vorrat', 1000, 2.5),
+      food('Griechischer Joghurt', 'griechischer_joghurt', 350, 'Kühlregal', 500, 2.3),
+    ],
+  },
+  {
+    id: 'bowl',
+    name: 'Rinder-Bowl mit Süßkartoffel',
+    fridgeDays: 4,
+    freezes: true,
+    reheat: '3 Minuten Mikrowelle oder 8 Minuten Airfryer',
+    twists: ['Mit Avocado-Creme', 'Mit eingelegten Zwiebeln'],
+    ingredients: [
+      oil(),
+      food('Rinderhack mager', 'rinderhack_mager', 870, 'Tiefkühl', 500, 4.5),
+      food('Süßkartoffeln', 'suesskartoffeln', 1390, 'Gemüse und Obst', 1000, 2.5),
+      food('Kichererbsen', 'kichererbsen_dose', 560, 'Vorrat', 240, 0.8),
+      food('Paprika', 'paprika', 350, 'Gemüse und Obst', 500, 2.5),
     ],
   },
 ];
 
-// Answers like Claude does: one portion per slot the request lists, all cooked on the first cook day.
+const dayOf = (date) => Date.parse(`${date}T00:00:00Z`) / 86400000;
+
+// Answers like Claude does: each portion comes from the last cook day before it and only while it keeps or freezes.
 function plan(request) {
   const text = request.messages[0].content;
-  const slots = [...text.matchAll(/^(\d+-\S+): (\d{4}-\d{2}-\d{2}), /gm)].map((match) => match[1]);
-  const start = text.match(/Kochtage: (\d{4}-\d{2}-\d{2})/)?.[1] ?? new Date().toISOString().slice(0, 10);
+  const slots = [...text.matchAll(/^(\d+-\S+): (\d{4}-\d{2}-\d{2}), /gm)].map((match) => ({
+    slot: match[1],
+    date: match[2],
+  }));
+  const cookDates = (text.match(/Kochtage: ([^,]+),/)?.[1] ?? '').match(/\d{4}-\d{2}-\d{2}/g) ?? [
+    new Date().toISOString().slice(0, 10),
+  ];
+  const groups = cookDates.map((date, index) => ({
+    date,
+    recipes: (index === 0 || cookDates.length === 1 ? FIRST : SECOND).map((recipe) => ({
+      ...recipe,
+      cookDate: date,
+    })),
+  }));
+  // With one cook day the whole week comes from it, so the second batch of dishes joins the first.
+  if (groups.length === 1)
+    groups[0].recipes.push(...SECOND.map((recipe) => ({ ...recipe, cookDate: cookDates[0] })));
+  const turns = new Map();
+  const assignments = slots.map(({ slot, date }) => {
+    const group = groups.filter((entry) => dayOf(entry.date) < dayOf(date)).at(-1) ?? groups[0];
+    const age = dayOf(date) - dayOf(group.date);
+    const fits = group.recipes.filter((recipe) => recipe.fridgeDays >= age || recipe.freezes);
+    const turn = turns.get(group.date) ?? 0;
+    turns.set(group.date, turn + 1);
+    return { slot, recipeId: fits[turn % fits.length].id };
+  });
+  const used = new Set(assignments.map((entry) => entry.recipeId));
   return {
-    recipes: RECIPES.map((recipe) => ({ ...recipe, cookDate: start })),
-    // The pasta keeps three days and does not freeze, so it only comes early in the week.
-    assignments: slots.map((slot, index) => {
-      const fits = Number(slot.split('-')[0]) <= 3 ? RECIPES : RECIPES.filter((recipe) => recipe.freezes);
-      return { slot, recipeId: fits[index % fits.length].id };
-    }),
+    recipes: groups.flatMap((group) => group.recipes).filter((recipe) => used.has(recipe.id)),
+    assignments,
     fillers: [
       {
         id: 'quark',
@@ -124,56 +210,68 @@ function plan(request) {
         ],
       },
     ],
-    cookDays: [
-      {
-        date: start,
-        minutes: 100,
-        steps: [
-          {
-            recipeId: '',
-            title: 'Alles bereitlegen',
-            detail: 'Zwiebeln, Paprika, Zucchini und Brokkoli schneiden.',
-            timerMinutes: 0,
-            timerName: '',
-          },
-          {
-            recipeId: 'chili',
-            title: 'Chili ansetzen',
-            detail: 'Hack krümelig anbraten, Zwiebeln und Paprika dazu, Tomaten und Bohnen einrühren.',
-            timerMinutes: 35,
-            timerName: 'Chili',
-          },
-          {
-            recipeId: 'curry',
-            title: 'Reis aufsetzen',
-            detail: 'Reis und Basmati in zwei Töpfen kochen.',
-            timerMinutes: 15,
-            timerName: 'Reis',
-          },
-          {
-            recipeId: 'curry',
-            title: 'Curry kochen',
-            detail: 'Hähnchen anbraten, Currypaste und Kokosmilch dazu, Brokkoli in den letzten 6 Minuten.',
-            timerMinutes: 20,
-            timerName: 'Curry',
-          },
-          {
-            recipeId: 'pasta',
-            title: 'Pasta kochen',
-            detail: 'Nudeln bissfest, Pute und Zucchini in der Pfanne, alles mischen, Feta darüber.',
-            timerMinutes: 10,
-            timerName: 'Nudeln',
-          },
-          {
-            recipeId: '',
-            title: 'Portionieren',
-            detail: 'In Boxen abkühlen lassen, beschriften, die späteren Tage in den Tiefkühler.',
-            timerMinutes: 0,
-            timerName: '',
-          },
-        ],
-      },
-    ],
+    cookDays: groups.map((group, index) =>
+      index === 0
+        ? {
+            date: group.date,
+            minutes: 90,
+            steps: [
+              step('', 'Alles bereitlegen', 'Zwiebeln, Paprika, Zucchini und Brokkoli schneiden.'),
+              step(
+                'chili',
+                'Chili ansetzen',
+                'Hack krümelig anbraten, Zwiebeln und Paprika dazu, Tomaten und Bohnen einrühren.',
+                35,
+                'Chili'
+              ),
+              step('curry', 'Reis aufsetzen', 'Reis und Basmati in zwei Töpfen kochen.', 15, 'Reis'),
+              step(
+                'curry',
+                'Curry kochen',
+                'Hähnchen anbraten, Currypaste und Kokosmilch dazu, Brokkoli in den letzten 6 Minuten.',
+                20,
+                'Curry'
+              ),
+              step(
+                'pasta',
+                'Pasta kochen',
+                'Nudeln bissfest, Pute und Zucchini in der Pfanne, alles mischen, Feta darüber.',
+                10,
+                'Nudeln'
+              ),
+              step('', 'Portionieren', 'In Boxen abkühlen lassen und beschriften.'),
+            ],
+          }
+        : {
+            date: group.date,
+            minutes: 75,
+            steps: [
+              step(
+                'bowl',
+                'Süßkartoffeln in den Ofen',
+                'Würfeln, mit Öl und Paprika mischen, bei 200 °C rösten.',
+                30,
+                'Ofen'
+              ),
+              step(
+                'dal',
+                'Dal ansetzen',
+                'Linsen mit Tomaten und Kokosmilch köcheln, Spinat am Ende unterrühren.',
+                20,
+                'Dal'
+              ),
+              step(
+                'teriyaki',
+                'Teriyaki braten',
+                'Hähnchen anbraten, Sojasauce und Honig einkochen, Sesam darüber.',
+                12,
+                'Teriyaki'
+              ),
+              step('bowl', 'Hack und Kichererbsen', 'Krümelig braten, Kichererbsen mitrösten.', 8, 'Pfanne'),
+              step('', 'Portionieren', 'In Boxen abkühlen lassen, die letzten Tage in den Tiefkühler.'),
+            ],
+          }
+    ),
   };
 }
 
