@@ -1,5 +1,6 @@
 // Der Tiefkühler: was drin liegt und seit wann. The next plan uses it up first, without being asked.
 import { getPlan, getStock, saveStock } from './actions.js';
+import { icon } from './icons.js';
 import { localDay, weekdayOf } from './planner.js';
 import { dayLabel, esc, rerender } from './ui.js';
 
@@ -48,11 +49,10 @@ export function stockView() {
         )
         .join('')}
     </div>
-    <form id="stockAdd" class="inline-form" novalidate>
-      <label class="field">Selbst etwas eintragen
-        <input name="name" type="text" maxlength="60" placeholder="Zum Beispiel Linsen-Dal">
-      </label>
-      <button type="submit" class="secondary">Eine Portion dazu</button>
+    <h2 class="section">Selbst eintragen</h2>
+    <form id="stockAdd" class="composer add-line" novalidate>
+      <input name="name" type="text" maxlength="60" placeholder="Zum Beispiel Linsen-Dal" aria-label="Was liegt im Tiefkühler?">
+      <button type="submit" class="send" aria-label="Eine Portion dazu">${icon('plus')}</button>
     </form>`;
 }
 

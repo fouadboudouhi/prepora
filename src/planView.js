@@ -49,8 +49,34 @@ function boxLine(plan, date) {
 }
 
 // The fridge is where a box usually waits, so only the freezer is said.
+// The fridge is where a box usually waits, so only the freezer gets a mark; what it means is said once below.
 const placeOf = (meal) =>
-  meal.storage === 'freezer' ? '<span class="muted small block">Tiefkühler, am Vorabend auftauen</span>' : '';
+  meal.storage === 'freezer'
+    ? `<span class="frozen" title="Aus dem Tiefkühler">${icon('snow')}<span class="sr">Aus dem Tiefkühler</span></span>`
+    : '';
+
+function fridgeRow() {
+  return fridgeState.busy
+    ? '<div class="row" role="status"><span class="muted">Claude schaut in deinen Kühlschrank …</span></div>'
+    : `<label class="row go"><span class="tile">${icon('camera')}</span><span class="grow"><span class="block">Kühlschrank fotografieren</span><span class="muted small">Was drin ist, kommt in den Plan</span></span><input id="fridgePhoto" type="file" accept="image/*" capture="environment" hidden></label>`;
+}
+
+function fridgeItems() {
+  const items = getFridge();
+  return `
+    ${fridgeState.error ? `<p class="error" role="alert">${esc(errorText(fridgeState.error))}</p>` : ''}
+    ${
+      items.length
+        ? `<p class="caption">Kommt in den nächsten Plan, antippen zum Entfernen</p>
+           <div class="pills">${items
+             .map(
+               (item) =>
+                 `<button type="button" class="chip" data-action="dropFridge" data-item="${esc(item)}">${esc(item)}</button>`
+             )
+             .join('')}</div>`
+        : ''
+    }`;
+}
 
 function fridgeBlock() {
   const items = getFridge();
@@ -154,12 +180,17 @@ export function planView() {
           return `<div class="row stacked"><span>${esc(dayLabel(date))}</span>${meals
             .map(
               (meal) =>
-                `<span class="meal${meal.eaten ? ' done' : ''}"><span class="muted">${esc(meal.meal)}</span><span><span class="dish block">${esc(mealName(plan, meal))}</span>${placeOf(meal)}</span></span>`
+                `<span class="meal${meal.eaten ? ' done' : ''}"><span class="muted">${esc(meal.meal)}</span><span class="dish">${esc(mealName(plan, meal))}${placeOf(meal)}</span></span>`
             )
             .join('')}</div>`;
         })
         .join('')}
     </div>
+    ${
+      plan.meals.some((meal) => meal.storage === 'freezer')
+        ? `<p class="note" id="freezerNote">${icon('snow')} kommt aus dem Tiefkühler. Am Vorabend in den Kühlschrank legen, die App erinnert dich.</p>`
+        : ''
+    }
     <h2 class="section">Gerichte</h2>
     <div class="list" id="recipeList">
       ${plan.recipes
@@ -175,9 +206,23 @@ export function planView() {
         )
         .join('')}
     </div>
-    ${fridgeBlock()}
-    <button type="button" class="secondary" data-action="newWeek"${planning.busy ? ' disabled' : ''}>Neue Woche planen</button>
-    ${best ? `<button type="button" class="secondary" data-action="repeatWeek">Beste Woche wiederholen</button>` : ''}`;
+    <h2 class="section">Nächste Woche</h2>
+    <div class="list" id="planMore">
+      <button type="button" class="row go" data-action="newWeek"${planning.busy ? ' disabled' : ''}>
+        <span class="tile">${icon('plan')}</span>
+        <span class="grow"><span class="block">Neue Woche planen</span><span class="muted small">Claude plant nach Ziel und Geschmack</span></span>
+      </button>
+      ${
+        best
+          ? `<button type="button" class="row go" data-action="repeatWeek">
+               <span class="tile">${icon('repeat')}</span>
+               <span class="grow"><span class="block">Beste Woche wiederholen</span><span class="muted small">Ohne Claude, kostet nichts</span></span>
+             </button>`
+          : ''
+      }
+      ${fridgeRow()}
+    </div>
+    ${fridgeItems()}`;
 }
 
 export async function readFridgePhoto(file) {

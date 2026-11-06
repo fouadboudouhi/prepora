@@ -105,7 +105,7 @@ export function recipesView() {
                   <span class="muted small">Pro Portion ca. ${number(perServing(recipe, 'kcal'))} kcal, ${number(perServing(recipe, 'protein'))} g Eiweiß</span>
                 </span>
                 <button type="button" class="chip${recipe.wanted ? ' taken' : ''}" data-action="wantRecipe" data-id="${esc(recipe.id)}" aria-pressed="${!!recipe.wanted}">Nächste Woche</button>
-                <button type="button" class="round" data-action="dropRecipe" data-id="${esc(recipe.id)}" aria-label="${esc(recipe.name)} löschen">×</button>
+                <button type="button" class="mini" data-action="dropRecipe" data-id="${esc(recipe.id)}" aria-label="${esc(recipe.name)} löschen">${icon('close')}</button>
               </div>`
             )
             .join('')}</div>`
@@ -113,13 +113,13 @@ export function recipesView() {
     }
     ${state.busy ? '<p class="note" role="status">Claude liest das Rezept …</p>' : ''}
     ${state.error ? `<p class="error" role="alert">${esc(errorText(state.error))}</p>` : ''}
-    <form id="recipeImport" class="inline-form" novalidate>
-      <label class="field">Link oder Rezepttext
-        <textarea name="source" rows="3" maxlength="8000" placeholder="https://…"></textarea>
-      </label>
-      <button type="submit" class="secondary"${state.busy ? ' disabled' : ''}>Übernehmen</button>
+    <h2 class="section">Rezept hinzufügen</h2>
+    <form id="recipeImport" class="composer" novalidate>
+      <textarea name="source" rows="1" maxlength="8000" placeholder="Link oder Rezepttext" aria-label="Link oder Rezepttext"></textarea>
+      <label class="tool"><span class="sr">Rezept fotografieren</span>${icon('camera')}<input id="recipePhoto" type="file" accept="image/*" hidden></label>
+      <button type="submit" class="send" aria-label="Übernehmen"${state.busy ? ' disabled' : ''}>${icon('up')}</button>
     </form>
-    <label class="secondary as-button">${icon('camera')}Rezept fotografieren<input id="recipePhoto" type="file" accept="image/*" hidden></label>`;
+    <p class="note">Ein Link zu einem Rezept, der Text aus einem Kochbuch oder ein Foto davon. Claude liest Zutaten und Schritte heraus.</p>`;
 }
 
 export const recipeActions = {

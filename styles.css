@@ -1707,3 +1707,55 @@ label.row:active {
   display: inline-block;
   min-width: 96px;
 }
+
+/* Buttons in a row of three line up whatever their kind */
+.three button.primary,
+.three button.secondary {
+  margin: 0;
+}
+
+/* The week: a small snowflake marks the boxes from the freezer */
+.meal .dish {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.frozen {
+  display: inline-grid;
+  flex: none;
+  color: var(--accent-ink);
+}
+.frozen .glyph,
+#freezerNote .glyph {
+  width: 15px;
+  height: 15px;
+  vertical-align: -2px;
+}
+#planMore .row:disabled {
+  opacity: 0.6;
+}
+
+/* One line to add something: the field, maybe a second small one, and a round button */
+.add-line input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  caret-color: var(--accent);
+}
+.add-line input.dose {
+  flex: 0 0 72px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+.add-line input:focus {
+  outline: 0;
+}
+#supplementAdd,
+#recipeImport {
+  margin-top: 16px;
+}
