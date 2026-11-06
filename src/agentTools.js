@@ -1,8 +1,11 @@
 // What the assistant may look at and do. Each tool calls what the screens use too, so the same rules hold: plans come
 // from the planner with its checks, numbers from nutrition.js. The note about medicines stays with the supplements.
 import {
+  addExtra,
   eat,
+  getAllExtras,
   getFridge,
+  getHistory,
   getMyRecipes,
   getPlan,
   getStock,
@@ -18,6 +21,7 @@ import {
   skip,
   updateBlocks,
 } from './actions.js';
+import { LOG_SCHEMA, dayIntake, entryFrom, weekIntake } from './foodLog.js';
 import { ACTIVITY, GOALS, dailyTargets } from './nutrition.js';
 import { DEVICES, DIETS, MEALS, getProfile, saveProfile } from './profile.js';
 import { localDay, mealName, recipeOf, shoppingList } from './planner.js';
@@ -188,6 +192,30 @@ export const TOOLS = [
       properties: { mealId: { type: 'string' }, action: { type: 'string', enum: ['eaten', 'skip'] } },
     },
   },
+  {
+    name: 'log_food',
+    description:
+      'Trägt ein, was die Person außer ihren Boxen gegessen hat. Boxen aus dem Plan hakst du mit mark_meal ab, nicht hier. Für jedes Lebensmittel oder Gericht: name mit Menge, food = passende id aus der Liste oder "", grams, und deine Schätzung für kcal, protein, fat, carbs genau dieser Menge. Für bekannte ids rechnet die App selbst. date nur, wenn es nicht heute war (höchstens 7 Tage zurück).',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['foods'],
+      properties: {
+        foods: { ...LOG_SCHEMA.properties.foods, maxItems: 20 },
+        date: { type: 'string', description: 'YYYY-MM-DD, Standard heute' },
+      },
+    },
+  },
+  {
+    name: 'get_food_log',
+    description:
+      'Was die Person an den letzten Tagen gegessen hat, Boxen und Eingetragenes, mit Summen pro Tag, dem Schnitt der abgeschlossenen Tage und ihrem Tagesziel. days: 1 bis 14, Standard 7.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { days: { type: 'integer', minimum: 1, maximum: 14 } },
+    },
+  },
 ];
 
 export const TOOL_STATUS = {
@@ -203,6 +231,8 @@ export const TOOL_STATUS = {
   set_fridge: 'Trägt den Kühlschrank ein …',
   update_freezer: 'Ändert den Tiefkühler …',
   mark_meal: 'Hakt die Mahlzeit ab …',
+  log_food: 'Trägt das Essen ein …',
+  get_food_log: 'Schaut, was du gegessen hast …',
 };
 
 const without = ({ health, goalText, weights, adjustNote, ...rest }) => rest;
@@ -342,6 +372,58 @@ function markMeal({ mealId, action }) {
   return { done: true, outcome: skip(mealId) };
 }
 
+const shiftDay = (date, days) => {
+  const at = new Date(`${date}T12:00:00`);
+  at.setDate(at.getDate() + days);
+  return localDay(at);
+};
+const plans = () => [getPlan(), ...getHistory()];
+
+function logFood({ foods, date }) {
+  const today = localDay();
+  const day = date ?? today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today || day < shiftDay(today, -7))
+    return { error: 'date muss ein Tag der letzten sieben Tage sein, im Format YYYY-MM-DD.' };
+  if (
+    !Array.isArray(foods) ||
+    !foods.length ||
+    foods.length > 20 ||
+    !foods.every((item) => item && typeof item === 'object')
+  )
+    return { error: 'foods braucht eine Liste mit 1 bis 20 Einträgen.' };
+  const entries = foods.map((item) => entryFrom(item));
+  entries.forEach((entry) => addExtra(day, entry));
+  return { done: true, date: day, logged: entries, dayTotal: dayIntake(day, plans(), getAllExtras()).total };
+}
+
+function foodLog({ days = 7 }) {
+  const count = Number.isInteger(days) ? Math.min(14, Math.max(1, days)) : 7;
+  const today = localDay();
+  const extras = getAllExtras();
+  const list = Array.from({ length: count }, (_, index) =>
+    dayIntake(shiftDay(today, index - count + 1), plans(), extras)
+  );
+  return {
+    today,
+    dailyTarget: dailyTargets(getProfile()),
+    lastSevenDays: (({ average, counted }) => ({ average, completeDaysCounted: counted }))(
+      weekIntake(today, plans(), extras)
+    ),
+    days: list.map(({ date, total, entries }) => ({
+      date,
+      total,
+      entries: entries.map(({ name, kcal, protein, fat, carbs, estimated }) => ({
+        name,
+        kcal,
+        protein,
+        fat,
+        carbs,
+        ...(estimated ? { estimated: true } : {}),
+      })),
+    })),
+  };
+}
+
 export async function runTool(name, input = {}) {
   switch (name) {
     case 'get_overview':
@@ -414,13 +496,17 @@ export async function runTool(name, input = {}) {
       return updateFreezer(input);
     case 'mark_meal':
       return markMeal(input);
+    case 'log_food':
+      return logFood(input);
+    case 'get_food_log':
+      return foodLog(input);
     default:
       return { error: `Unbekanntes Werkzeug: ${name}` };
   }
 }
 
 // What a turn changed, so one tap can take it back. Kept while the app is open.
-export const KEYS = ['profile', 'plan', 'history', 'shop', 'stock', 'taste', 'fridge'];
+export const KEYS = ['profile', 'plan', 'history', 'shop', 'stock', 'taste', 'fridge', 'extras'];
 export const snapshot = () => Object.fromEntries(KEYS.map((key) => [key, JSON.stringify(read(key, null))]));
 
 const NAMES = {
@@ -429,6 +515,7 @@ const NAMES = {
   taste: 'Geschmack',
   fridge: 'Kühlschrank',
   stock: 'Tiefkühler',
+  extras: 'Gegessen',
 };
 export function changesBetween(before, after) {
   const changed = KEYS.filter((key) => before[key] !== after[key]);
