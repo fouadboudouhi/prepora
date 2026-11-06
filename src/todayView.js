@@ -58,16 +58,29 @@ function dayTotal(plan, today, key, upcoming = false) {
   return eaten + waiting.reduce((total, meal) => total + (mealNutrition(plan, meal)?.[key] ?? 0), 0);
 }
 
-function progress(plan, today, targets) {
-  if (!targets) return '';
+// The day at a glance: eaten against the target, what is still open, and one tap to the week.
+function statusBlock(plan, today, targets, profile) {
   const sum = (key) => dayTotal(plan, today, key);
   const bar = (value, goal) =>
     `<span class="bar"><span style="width:${Math.min(100, Math.round((value / goal) * 100))}%"></span></span>`;
+  const early = plan && today < plan.start;
+  const openKcal = targets.kcal - dayTotal(plan, today, 'kcal', true);
+  const openProtein = targets.protein - dayTotal(plan, today, 'protein', true);
+  const gap =
+    plan && !early && (openKcal >= GAP_KCAL || openProtein >= GAP_PROTEIN)
+      ? `Mit den Boxen noch offen: ${[openKcal > 0 ? `ca. ${number(openKcal)} kcal` : '', openProtein > 0 ? `${number(openProtein)} g Eiweiß` : ''].filter(Boolean).join(', ')}`
+      : '';
+  const week = weekIntake(today, allPlans(), getAllExtras());
   return `
-    <section class="day-line">
-      <div><strong>${number(sum('kcal'))}</strong> <span class="muted">von ${number(targets.kcal)} kcal</span>${bar(sum('kcal'), targets.kcal)}</div>
-      <div><strong>${number(sum('protein'))} g</strong> <span class="muted">von ${number(targets.protein)} g Eiweiß</span>${bar(sum('protein'), targets.protein)}</div>
-      <p class="macros" id="macros">Fett ${number(sum('fat'))} g · Kohlenhydrate ${number(sum('carbs'))} g</p>
+    <section class="status">
+      <button type="button" class="day-line" data-tab="week" id="weekRow">
+        <span><strong>${number(sum('kcal'))}</strong> <span class="muted">von ${number(targets.kcal)} kcal</span>${bar(sum('kcal'), targets.kcal)}</span>
+        <span><strong>${number(sum('protein'))} g</strong> <span class="muted">von ${number(targets.protein)} g Eiweiß</span>${bar(sum('protein'), targets.protein)}</span>
+        <span class="macros" id="macros">Fett ${number(sum('fat'))} g · Kohlenhydrate ${number(sum('carbs'))} g</span>
+        ${gap ? `<span class="gap" id="gap">${esc(gap)}</span>` : ''}
+        <span class="week-link">Deine Woche${week.average ? `, Schnitt ca. ${number(Math.round(week.average.kcal / 10) * 10)} kcal` : ''}</span>
+      </button>
+      <button type="button" class="goal-link" data-tab="profile" id="todayTargets">${esc(GOALS[profile.goal].label)}: ${esc(targetText(targets))}</button>
     </section>`;
 }
 
@@ -95,28 +108,43 @@ const entryRow = (entry) => `
     }
   </div>`;
 
-function logBlock(today) {
+// Plan snacks not had yet today come first, then what was eaten often lately.
+function suggestions(plan, today) {
+  const had = new Set((getAllExtras()[today] ?? []).map((entry) => entry.name));
+  const snacks =
+    plan && today >= plan.start ? (plan.fillers ?? []).filter((filler) => !had.has(filler.name)) : [];
+  const recent = recentFoods(getAllExtras(), today, 6).filter(
+    (entry) => !snacks.some((filler) => filler.name === entry.name)
+  );
+  const chips = [
+    ...snacks.map(
+      (filler) =>
+        `<button type="button" class="chip snack" data-action="eatFiller" data-id="${esc(filler.id)}" aria-label="${esc(filler.name)} gegessen">+ ${esc(filler.name)}</button>`
+    ),
+    ...recent.map(
+      (entry) =>
+        `<button type="button" class="chip" data-action="logAgain" data-name="${esc(entry.name)}">+ ${esc(entry.name)}</button>`
+    ),
+  ].slice(0, 6);
+  return chips.length
+    ? `<div class="pills recent" id="suggest" aria-label="Vorschläge">${chips.join('')}</div>`
+    : '';
+}
+
+function logBlock(plan, today) {
   const eaten = intake(today).entries;
-  const recent = recentFoods(getAllExtras(), today, 4);
   return `
     <section id="foodLog">
       <h2 class="section">Gegessen</h2>
       <form id="foodLogForm" class="composer" novalidate>
         <textarea name="food" rows="1" maxlength="400" enterkeyhint="done" aria-label="Was hast du gegessen?" placeholder="Was hast du gegessen?"${log.busy ? ' disabled' : ''}>${esc(log.draft)}</textarea>
+        <button type="button" class="tool" data-tab="scan" id="scanButton" aria-label="Barcode scannen">${icon('barcode')}</button>
+        <label class="tool" id="dishPhotoLabel"><span class="sr">Essen fotografieren</span>${icon('camera')}<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>
         <button type="submit" class="send" aria-label="Eintragen"${log.busy ? ' disabled' : ''}>${icon('up')}</button>
       </form>
       ${log.busy ? '<p class="note" role="status">Claude rechnet …</p>' : ''}
       ${log.error ? `<p class="note error" role="alert">${esc(errorText(log.error))}</p>` : ''}
-      ${
-        recent.length
-          ? `<div class="pills recent" aria-label="Zuletzt gegessen">${recent
-              .map(
-                (entry) =>
-                  `<button type="button" class="chip" data-action="logAgain" data-name="${esc(entry.name)}">+ ${esc(entry.name)}</button>`
-              )
-              .join('')}</div>`
-          : ''
-      }
+      ${suggestions(plan, today)}
       ${eaten.length ? `<div class="list" id="eatenList">${eaten.map(entryRow).join('')}</div>` : ''}
     </section>`;
 }
@@ -154,13 +182,6 @@ function yesterdayBlock(plan, today) {
     </section>`;
 }
 
-function weekRow(today) {
-  const week = weekIntake(today, allPlans(), getAllExtras());
-  return `<button type="button" class="row go" data-tab="week" id="weekRow"><span>Deine Woche</span><span class="muted">${
-    week.average ? `Schnitt ca. ${number(Math.round(week.average.kcal / 10) * 10)} kcal` : 'Noch nichts'
-  }</span></button>`;
-}
-
 export async function logFood(text) {
   const said = text.trim();
   if (!said || log.busy) return;
@@ -196,33 +217,6 @@ export function changeAmount(select) {
 }
 
 // What today's boxes leave open, and what fills it without cooking.
-function gapBlock(plan, today, targets) {
-  const kcal = targets.kcal - dayTotal(plan, today, 'kcal', true);
-  const protein = targets.protein - dayTotal(plan, today, 'protein', true);
-  if (kcal < GAP_KCAL && protein < GAP_PROTEIN) return '';
-  const fillers = plan?.fillers ?? [];
-  return `
-    <section id="gap">
-      <h2 class="section">Noch offen: ${[kcal > 0 ? `ca. ${number(kcal)} kcal` : '', protein > 0 ? `${number(protein)} g Eiweiß` : ''].filter(Boolean).join(', ')}</h2>
-      ${
-        fillers.length
-          ? `<div class="list">${fillers
-              .map(
-                (filler) => `
-                <div class="row">
-                  <span class="grow">
-                    <span class="block">${esc(filler.name)}</span>
-                    <span class="muted small">${esc(filler.when)}, ca. ${number(filler.nutrition.kcal)} kcal, ${number(filler.nutrition.protein)} g Eiweiß</span>
-                  </span>
-                  <button type="button" class="text-button" data-action="eatFiller" data-id="${esc(filler.id)}" aria-label="${esc(filler.name)} gegessen">Gegessen</button>
-                </div>`
-              )
-              .join('')}</div>`
-          : ''
-      }
-    </section>`;
-}
-
 function supplementBlock(today) {
   const { mine, taken } = getSupplements();
   if (!mine.length) return '';
@@ -239,12 +233,7 @@ function supplementBlock(today) {
     </section>`;
 }
 
-// Two ways to put food in besides words: a code on the package, or a photo of the plate.
-const photoButton = `<div class="capture">
-  <button type="button" class="secondary as-button" data-tab="scan" id="scanButton">${icon('barcode')}Barcode</button>
-  <label class="secondary as-button" id="dishPhotoLabel">${icon('camera')}Foto<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>
-</div>`;
-
+// Top to bottom: what is to do now (cook, the boxes), how the day stands, what else was eaten.
 export function todayView() {
   const profile = getProfile();
   const targets = dailyTargets(profile);
@@ -255,11 +244,8 @@ export function todayView() {
         <p>Daraus berechnet Prepora deine Kalorien und dein Eiweiß.</p>
         <button type="button" class="primary" data-tab="profile">Profil ausfüllen</button>
       </div>`;
-  const goalRow = `
-    <button type="button" class="row go" data-tab="profile" id="todayTargets">
-      <span class="grow"><span class="block">${esc(GOALS[profile.goal].label)}</span><span class="muted small">${esc(targetText(targets))}</span></span>
-    </button>`;
   const plan = getPlan();
+  const today = localDay();
   if (!plan)
     return `
       <div class="card">
@@ -267,22 +253,28 @@ export function todayView() {
         <p>Ein Tipp, und Claude plant deine Woche.</p>
         <button type="button" class="primary" data-tab="plan">Zum Wochenplan</button>
       </div>
-      ${progress(null, localDay(), targets)}
-      ${logBlock(localDay())}
-      ${photoButton}
-      ${supplementBlock(localDay())}
-      <div class="list">${weekRow(localDay())}${goalRow}</div>`;
+      ${statusBlock(null, today, targets, profile)}
+      ${logBlock(null, today)}
+      ${supplementBlock(today)}`;
 
-  const today = localDay();
   const cookToday = plan.cookDays.find((day) => day.date === today && !day.done);
   const meals = plan.meals.filter((meal) => meal.date === today && !meal.skipped);
   const next = meals.find((meal) => !meal.eaten);
-  const rest = meals.filter((meal) => !meal.eaten && meal !== next);
+  const later = meals.filter((meal) => !meal.eaten && meal !== next);
   const thaw = plan.meals.filter((meal) => meal.thawOn === today && !meal.eaten && !meal.skipped);
   const upcoming = plan.cookDays.find((day) => day.date > today && !day.done);
   const lastEaten = justEaten && plan.meals.find((meal) => meal.id === justEaten);
   // Before the first cook day nothing of the plan is bought or cooked yet, so nothing of it can be eaten.
   const early = today < plan.start;
+  const footer = [
+    ...thaw.map(
+      (meal) =>
+        `<div class="row stacked thaw"><span>Heute Abend auftauen</span><span class="muted">${esc(mealName(plan, meal))} für ${esc(dayLabel(meal.date))} in den Kühlschrank legen</span></div>`
+    ),
+    upcoming
+      ? `<button type="button" class="row go" data-tab="plan"><span>Nächster Kochtag</span><span class="muted">${esc(dayLabel(upcoming.date))}, etwa ${upcoming.minutes} Min.</span></button>`
+      : '',
+  ].join('');
 
   return `
     ${
@@ -290,6 +282,7 @@ export function todayView() {
         ? `<section class="hero"><span class="eyebrow">Kochtag</span><h2>Etwa ${cookToday.minutes} Minuten</h2><button type="button" class="primary" data-action="startCook" data-date="${cookToday.date}">Kochtag starten</button></section>`
         : ''
     }
+    ${yesterdayBlock(plan, today)}
     ${
       next
         ? `<section class="hero" id="nextMeal">
@@ -300,6 +293,16 @@ export function todayView() {
             <p class="plain">${esc(portionLine(mealNutrition(plan, next)))}</p>
             <button type="button" class="primary" data-action="eat" data-id="${esc(next.id)}">Gegessen</button>
             <button type="button" class="text-button" data-action="skipMeal" data-id="${esc(next.id)}">Heute nicht</button>
+            ${
+              later.length
+                ? `<div class="later" id="laterMeals">${later
+                    .map(
+                      (meal) =>
+                        `<p><span class="muted">${esc(meal.meal)}</span> ${esc(mealName(plan, meal))}</p>`
+                    )
+                    .join('')}</div>`
+                : ''
+            }
           </section>`
         : early
           ? `<p class="note" id="planAhead">${
@@ -308,7 +311,7 @@ export function todayView() {
                 : `Am ${esc(dayLabel(plan.start))} kaufst du ein und kochst.`
             } Ab dem Tag danach isst du aus den Boxen, bis dahin wie gewohnt.</p>`
           : !cookToday
-            ? `<p class="note">Für heute ist nichts mehr offen.</p>`
+            ? `<p class="note">Für heute sind alle Boxen gegessen.</p>`
             : ''
     }
     ${
@@ -322,33 +325,10 @@ export function todayView() {
         : ''
     }
     ${notice ? `<p class="note" id="notice" role="status">${esc(notice)}</p>` : ''}
-    ${yesterdayBlock(plan, today)}
-    ${progress(plan, today, targets)}
-    ${logBlock(today)}
-    ${photoButton}
-    ${early ? '' : gapBlock(plan, today, targets)}
+    ${statusBlock(plan, today, targets, profile)}
+    ${logBlock(plan, today)}
     ${supplementBlock(today)}
-    <div class="list">
-      ${rest
-        .map(
-          (meal) =>
-            `<div class="row stacked"><span>${esc(meal.meal)}: ${esc(mealName(plan, meal))}</span><span class="muted">${esc(portionLine(mealNutrition(plan, meal)))}</span></div>`
-        )
-        .join('')}
-      ${thaw
-        .map(
-          (meal) =>
-            `<div class="row stacked thaw"><span>Heute Abend auftauen</span><span class="muted">${esc(mealName(plan, meal))} für ${esc(dayLabel(meal.date))} in den Kühlschrank legen</span></div>`
-        )
-        .join('')}
-      ${
-        upcoming
-          ? `<button type="button" class="row go" data-tab="plan"><span>Nächster Kochtag</span><span class="muted">${esc(dayLabel(upcoming.date))}, etwa ${upcoming.minutes} Min.</span></button>`
-          : ''
-      }
-      ${weekRow(today)}
-      ${goalRow}
-    </div>`;
+    ${footer ? `<div class="list">${footer}</div>` : ''}`;
 }
 
 const changeMeals = (change) => {

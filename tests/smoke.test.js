@@ -1020,7 +1020,7 @@ test('"Heute nicht" decides by itself what happens to the box', async () => {
   };
   const { context, page } = await open({ storage: { ...ready, 'prepora-plan': plan } });
   assert.match(await page.locator('#twist').innerText(), /Mit Limette/);
-  assert.match(await page.locator('#gap').innerText(), /Skyr/);
+  assert.match(await page.locator('#suggest').innerText(), /Skyr/);
   await page.click('[data-action="eatFiller"]');
   assert.match(await page.locator('.day-line').innerText(), /^300/);
   await page.click('[data-action="skipMeal"]');
