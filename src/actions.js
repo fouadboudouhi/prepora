@@ -39,14 +39,27 @@ export function getFridge() {
 export const saveFridge = (items) =>
   write('fridge', items.length ? { items, at: new Date().toISOString() } : null);
 
-const EXTRA_DAYS = 14;
-export const getExtras = (date) => read('extras', {})[date] ?? [];
+// What was eaten besides the boxes, by day. Two months stay, enough for the week and for what comes back often.
+const EXTRA_DAYS = 60;
+export const getAllExtras = () => read('extras', {});
+export const getExtras = (date) => getAllExtras()[date] ?? [];
 export function addExtra(date, entry) {
-  const extras = read('extras', {});
+  const extras = getAllExtras();
   const oldest = localDay(new Date(Date.now() - EXTRA_DAYS * DAY));
   const kept = Object.fromEntries(Object.entries(extras).filter(([day]) => day >= oldest));
-  write('extras', { ...kept, [date]: [...(kept[date] ?? []), entry] });
+  const id = entry.id ?? `e-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  write('extras', { ...kept, [date]: [...(kept[date] ?? []), { ...entry, id }] });
 }
+// Older entries have no id of their own; their place in the day stands in for it.
+function changeExtra(date, id, change) {
+  const extras = getAllExtras();
+  const day = (extras[date] ?? [])
+    .map((entry, index) => ((entry.id ?? `x-${index}`) === id ? change(entry) : entry))
+    .filter(Boolean);
+  write('extras', { ...extras, [date]: day });
+}
+export const removeExtra = (date, id) => changeExtra(date, id, () => null);
+export const setExtraFactor = (date, id, factor) => changeExtra(date, id, (entry) => ({ ...entry, factor }));
 
 export const getMyRecipes = () => read('myRecipes', []);
 export const saveMyRecipes = (list) => write('myRecipes', list);

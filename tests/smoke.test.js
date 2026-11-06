@@ -127,6 +127,17 @@ function agentReply(asked) {
   const last = asked.messages.at(-1);
   if (Array.isArray(last.content))
     return [{ type: 'text', text: 'Fertig: **neuer Plan** mit\n- Chili\n- Curry' }];
+  if (last.content.includes('gegessen'))
+    return [
+      {
+        type: 'tool_use',
+        id: 'tu-food',
+        name: 'log_food',
+        input: {
+          foods: [{ name: 'Banane', food: 'banane', grams: 120, kcal: 0, protein: 0, fat: 0, carbs: 0 }],
+        },
+      },
+    ];
   if (last.content.includes('Party'))
     return [
       { type: 'tool_use', id: 'tu-look', name: 'get_overview', input: {} },
@@ -222,6 +233,19 @@ async function open({
           status: 200,
           headers: { ...cors, 'content-type': 'text/event-stream' },
           body: agentStream(agentReply(asked)),
+        });
+      if (asked.output_config?.format?.schema?.required?.includes('foods'))
+        return route.fulfill({
+          status: 200,
+          headers: { ...cors, 'content-type': 'text/event-stream' },
+          body: streamOf(
+            JSON.stringify({
+              foods: [
+                { name: 'Skyr, 200 g', food: 'skyr', grams: 200, kcal: 999, protein: 0, fat: 0, carbs: 0 },
+                { name: 'Döner', food: '', grams: 350, kcal: 700, protein: 30, fat: 35, carbs: 60 },
+              ],
+            })
+          ),
         });
       const isPlan = asked.output_config?.format?.schema?.required?.includes('assignments');
       const required = asked.output_config?.format?.schema?.required ?? [];
@@ -1257,5 +1281,209 @@ test('an answer lost while the app was in the background is asked for again when
   await page.waitForSelector('.bubble:not(.mine):not(#chatLive)', { timeout: 15000 });
   assert.equal(await page.locator('.bubble:not(.mine):not(#chatLive)').innerText(), 'Hallo!');
   assert.equal(await page.locator('.note.error').count(), 0);
+  await context.close();
+});
+
+const dayOffset = (days) => {
+  const at = new Date();
+  at.setDate(at.getDate() + days);
+  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+};
+
+test('food said in a few words lands on today, known foods counted by the app, amounts can change', async () => {
+  const { context, page, errors } = await open({ storage: ready });
+  await page.fill('[name="food"]', '200 g Skyr und einen Döner');
+  await page.press('[name="food"]', 'Enter');
+  await page.waitForSelector('#eatenList');
+  const list = await page.locator('#eatenList').innerText();
+  // Skyr is known: 65 kcal per 100 g, whatever Claude guessed. The Döner is Claude's estimate and says so.
+  assert.match(list, /Skyr, 200 g\s+ca\. 130 kcal, 22 g Eiweiß/);
+  assert.match(list, /Döner\s+ca\. 700 kcal, 30 g Eiweiß, geschätzt/);
+  assert.match(await page.locator('.day-line').innerText(), /^830/);
+  assert.match(await page.locator('#macros').innerText(), /Fett 35 g · Kohlenhydrate 68 g/);
+  assert.equal(await page.locator('[name="food"]').inputValue(), '');
+
+  await page.selectOption('select[aria-label="Menge: Döner"]', '0.5');
+  assert.match(await page.locator('.day-line').innerText(), /^480/);
+  await page.click('[aria-label="Skyr, 200 g entfernen"]');
+  assert.doesNotMatch(await page.locator('#eatenList').innerText(), /Skyr/);
+  assert.match(await page.locator('.day-line').innerText(), /^350/);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('what came often comes back with one tap, and the week shows each day against the target', async () => {
+  const bar = { name: 'Proteinriegel', kcal: 200, protein: 20, fat: 8, carbs: 20 };
+  const extras = {
+    [dayOffset(-1)]: [
+      { ...bar, id: 'a' },
+      { name: 'Pizza', kcal: 1800, protein: 70, fat: 70, carbs: 200, id: 'b' },
+    ],
+    [dayOffset(-2)]: [
+      { ...bar, id: 'c' },
+      { name: 'Pasta', kcal: 2200, protein: 90, fat: 60, carbs: 300, id: 'd' },
+    ],
+  };
+  const { context, page } = await open({ storage: { ...ready, 'prepora-extras': extras } });
+  await page.click('[data-action="logAgain"][data-name="Proteinriegel"]');
+  assert.match(await page.locator('#eatenList').innerText(), /Proteinriegel/);
+  assert.equal(await page.locator('[data-action="logAgain"][data-name="Proteinriegel"]').count(), 0);
+
+  await page.click('#weekRow');
+  assert.equal(await page.locator('h1').innerText(), 'Deine Woche');
+  assert.equal(await page.locator('[aria-current="page"]').getAttribute('data-tab'), 'today');
+  // Today is not over and does not count; the two days before average 2.200 kcal.
+  assert.match(
+    await page.locator('#weekAverage').innerText(),
+    /Schnitt aus 2 Tagen[\s\S]*ca\. 2\.200 kcal, 100 g Eiweiß/
+  );
+  assert.equal(await page.locator('#weekDays .week-day').count(), 7);
+  assert.match(await page.locator('#weekDays .week-day').first().innerText(), /Heute[\s\S]*200/);
+  await page.click('.back');
+  assert.equal(await page.locator('h1').innerText(), 'Heute');
+  await context.close();
+});
+
+test('Claude in the chat logs what was eaten, and one tap takes it back', async () => {
+  const { context, page } = await open({ storage: ready });
+  await page.click('nav [data-tab="chat"]');
+  await page.fill('[name="message"]', 'Ich habe eine Banane gegessen');
+  await page.press('[name="message"]', 'Enter');
+  await page.waitForSelector('.chat-change');
+  assert.match(await page.locator('.chat-change').innerText(), /Geändert: Gegessen/);
+  const today = () =>
+    page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('prepora-extras') ?? '{}')).flat());
+  const logged = await today();
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0].kcal, 114);
+  assert.equal(logged[0].estimated, undefined);
+  await page.click('[data-action="chatUndo"]');
+  assert.deepEqual(await today(), []);
+  await context.close();
+});
+
+const NUTELLA = {
+  status: 1,
+  product: {
+    product_name: 'Nutella',
+    brands: 'Ferrero',
+    product_quantity: 400,
+    nutriments: { 'energy-kcal_100g': 539, proteins_100g: 6.3, fat_100g: 30.9, carbohydrates_100g: 57.5 },
+  },
+};
+async function withFoodFacts(context) {
+  const asked = [];
+  await context.route('https://world.openfoodfacts.org/**', (route) => {
+    asked.push(route.request().url());
+    const found = route.request().url().includes('/3017620422003.json');
+    return route.fulfill({
+      status: found ? 200 : 404,
+      headers: { 'access-control-allow-origin': '*' },
+      json: found ? NUTELLA : { status: 0 },
+    });
+  });
+  return asked;
+}
+
+test('a barcode typed in finds the product, the amount sets the numbers, and it lands on today', async () => {
+  const { context, page, errors } = await open({ storage: ready });
+  const asked = await withFoodFacts(context);
+  await page.click('#scanButton');
+  assert.equal(await page.locator('h1').innerText(), 'Barcode scannen');
+  assert.equal(await page.locator('[aria-current="page"]').getAttribute('data-tab'), 'today');
+  await page.fill('#scanCode [name="code"]', '3017620422004');
+  await page.press('#scanCode [name="code"]', 'Enter');
+  assert.match(await page.locator('#scanError').innerText(), /keine gültige Nummer/);
+  assert.equal(asked.length, 0);
+
+  await page.fill('#scanCode [name="code"]', '3017620422003');
+  await page.press('#scanCode [name="code"]', 'Enter');
+  await page.waitForSelector('#scanResult h2');
+  const card = await page.locator('#scanResult').innerText();
+  assert.match(card, /Ferrero[\s\S]*Nutella[\s\S]*Pro 100 g: 539 kcal/);
+  assert.match(card, /Packung, 400 g/);
+  await page.fill('[name="scanGrams"]', '15');
+  assert.equal(await page.locator('#scanTotal').innerText(), 'ca. 81 kcal, 1 g Eiweiß');
+  await page.click('[data-action="scanLog"]');
+  assert.equal(await page.locator('h1').innerText(), 'Heute');
+  const list = await page.locator('#eatenList').innerText();
+  assert.match(list, /Nutella, 15 g\s+ca\. 81 kcal, 1 g Eiweiß/);
+  assert.doesNotMatch(list, /geschätzt/);
+  assert.deepEqual(
+    asked.map((url) => new URL(url).pathname),
+    ['/api/v2/product/3017620422003.json']
+  );
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('a product Open Food Facts does not know says so and points to words instead', async () => {
+  const { context, page } = await open({ storage: ready });
+  await withFoodFacts(context);
+  await page.click('#scanButton');
+  await page.fill('#scanCode [name="code"]', '4006381333931');
+  await page.press('#scanCode [name="code"]', 'Enter');
+  await page.waitForSelector('#scanResult');
+  assert.match(
+    await page.locator('#scanResult').innerText(),
+    /kennt die Nummer 4006381333931 nicht[\s\S]*eigenen Worten/
+  );
+  await page.click('[data-action="scanAgain"]');
+  assert.equal(await page.locator('#scanCode').count(), 1);
+  await context.close();
+});
+
+test('ZXing reads a real EAN-13 the way Safari would need it', async () => {
+  const { context, page } = await open({ storage: ready });
+  const code = await page.evaluate(async () => {
+    const L = [
+      '0001101',
+      '0011001',
+      '0010011',
+      '0111101',
+      '0100011',
+      '0110001',
+      '0101111',
+      '0111011',
+      '0110111',
+      '0001011',
+    ];
+    const R = L.map((bits) => [...bits].map((bit) => (bit === '0' ? '1' : '0')).join(''));
+    const G = R.map((bits) => [...bits].reverse().join(''));
+    const PARITY = [
+      'LLLLLL',
+      'LLGLGG',
+      'LLGGLG',
+      'LLGGGL',
+      'LGLLGG',
+      'LGGLLG',
+      'LGGGLL',
+      'LGLGLG',
+      'LGLGGL',
+      'LGGLGL',
+    ];
+    const digits = [...'4006381333931'].map(Number);
+    const left = digits
+      .slice(1, 7)
+      .map((d, i) => (PARITY[digits[0]][i] === 'L' ? L : G)[d])
+      .join('');
+    const right = digits
+      .slice(7)
+      .map((d) => R[d])
+      .join('');
+    const bits = `101${left}01010${right}101`;
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const draw = canvas.getContext('2d');
+    draw.fillStyle = '#fff';
+    draw.fillRect(0, 0, canvas.width, canvas.height);
+    draw.fillStyle = '#000';
+    [...bits].forEach((bit, i) => bit === '1' && draw.fillRect(130 + i * 4, 140, 4, 200));
+    const { makeDecoder } = await import('/src/scanView.js');
+    const decode = await makeDecoder({ native: false });
+    return decode(canvas);
+  });
+  assert.equal(code, '4006381333931');
   await context.close();
 });

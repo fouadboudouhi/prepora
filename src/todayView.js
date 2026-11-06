@@ -1,11 +1,26 @@
 // Heute: what to eat now and the one thing to do next. Eating is one tap; rating it is a second, optional one.
-import { addExtra, eat, getExtras, getPlan, getSupplements, rate, saveSupplements, skip } from './actions.js';
+import {
+  addExtra,
+  eat,
+  getAllExtras,
+  getHistory,
+  getPlan,
+  getSupplements,
+  rate,
+  removeExtra,
+  saveSupplements,
+  setExtraFactor,
+  skip,
+} from './actions.js';
+import { askClaudeJson } from './ai.js';
+import { LOG_SCHEMA, LOG_SYSTEM, dayIntake, entryFrom, recentFoods, weekIntake } from './foodLog.js';
 import { dailyTargets, GOALS } from './nutrition.js';
 import { icon } from './icons.js';
 import { getProfile } from './profile.js';
 import { localDay, mealName, mealNutrition, recipeOf } from './planner.js';
 import { targetText } from './profileView.js';
-import { dayLabel, esc, number, rerender } from './ui.js';
+import { SessionError } from './session.js';
+import { dayLabel, errorText, esc, number, rerender } from './ui.js';
 
 let justEaten = null;
 let notice = '';
@@ -31,12 +46,15 @@ const whereItIs = (plan, meal, today) => {
 const portionLine = (nutrition) =>
   nutrition ? `ca. ${number(nutrition.kcal)} kcal, ${number(nutrition.protein)} g Eiweiß` : '';
 
+const allPlans = () => [getPlan(), ...getHistory()];
+const intake = (date) => dayIntake(date, allPlans(), getAllExtras());
+
+// What was eaten today, and with `upcoming` also the boxes still waiting for today.
 function dayTotal(plan, today, key, upcoming = false) {
-  const meals = (plan?.meals ?? []).filter(
-    (meal) => meal.date === today && !meal.skipped && (upcoming || meal.eaten)
-  );
-  const fromMeals = meals.reduce((total, meal) => total + (mealNutrition(plan, meal)?.[key] ?? 0), 0);
-  return fromMeals + getExtras(today).reduce((total, extra) => total + (extra[key] ?? 0), 0);
+  const eaten = intake(today).total[key];
+  if (!upcoming) return eaten;
+  const waiting = (plan?.meals ?? []).filter((meal) => meal.date === today && !meal.skipped && !meal.eaten);
+  return eaten + waiting.reduce((total, meal) => total + (mealNutrition(plan, meal)?.[key] ?? 0), 0);
 }
 
 function progress(plan, today, targets) {
@@ -48,7 +66,99 @@ function progress(plan, today, targets) {
     <section class="day-line">
       <div><strong>${number(sum('kcal'))}</strong> <span class="muted">von ${number(targets.kcal)} kcal</span>${bar(sum('kcal'), targets.kcal)}</div>
       <div><strong>${number(sum('protein'))} g</strong> <span class="muted">von ${number(targets.protein)} g Eiweiß</span>${bar(sum('protein'), targets.protein)}</div>
+      <p class="macros" id="macros">Fett ${number(sum('fat'))} g · Kohlenhydrate ${number(sum('carbs'))} g</p>
     </section>`;
+}
+
+// Eating something besides the boxes: a few words, or one tap on what came often lately.
+const log = { busy: false, error: null, draft: '' };
+const AMOUNTS = [
+  [0.5, 'Halb'],
+  [1, '1×'],
+  [1.5, '1½'],
+  [2, '2×'],
+  [3, '3×'],
+];
+
+const entryRow = (entry) => `
+  <div class="row eaten">
+    <span class="grow"><span class="block">${esc(entry.name)}</span><span class="muted small">ca. ${number(entry.kcal)} kcal, ${number(entry.protein)} g Eiweiß${entry.estimated ? ', geschätzt' : ''}</span></span>
+    ${
+      entry.kind === 'extra'
+        ? `<select class="amount" data-extra="${esc(entry.id)}" aria-label="Menge: ${esc(entry.name)}">${AMOUNTS.map(
+            ([value, label]) =>
+              `<option value="${value}"${(entry.factor ?? 1) === value ? ' selected' : ''}>${label}</option>`
+          ).join('')}</select>
+           <button type="button" class="mini" data-action="removeExtra" data-id="${esc(entry.id)}" aria-label="${esc(entry.name)} entfernen">${icon('close')}</button>`
+        : ''
+    }
+  </div>`;
+
+function logBlock(today) {
+  const eaten = intake(today).entries;
+  const recent = recentFoods(getAllExtras(), today, 4);
+  return `
+    <section id="foodLog">
+      <h2 class="section">Gegessen</h2>
+      <form id="foodLogForm" class="composer" novalidate>
+        <textarea name="food" rows="1" maxlength="400" enterkeyhint="done" aria-label="Was hast du gegessen?" placeholder="Was hast du gegessen?"${log.busy ? ' disabled' : ''}>${esc(log.draft)}</textarea>
+        <button type="submit" class="send" aria-label="Eintragen"${log.busy ? ' disabled' : ''}>${icon('up')}</button>
+      </form>
+      ${log.busy ? '<p class="note" role="status">Claude rechnet …</p>' : ''}
+      ${log.error ? `<p class="note error" role="alert">${esc(errorText(log.error))}</p>` : ''}
+      ${
+        recent.length
+          ? `<div class="pills recent" aria-label="Zuletzt gegessen">${recent
+              .map(
+                (entry) =>
+                  `<button type="button" class="chip" data-action="logAgain" data-name="${esc(entry.name)}">+ ${esc(entry.name)}</button>`
+              )
+              .join('')}</div>`
+          : ''
+      }
+      ${eaten.length ? `<div class="list" id="eatenList">${eaten.map(entryRow).join('')}</div>` : ''}
+    </section>`;
+}
+
+function weekRow(today) {
+  const week = weekIntake(today, allPlans(), getAllExtras());
+  return `<button type="button" class="row go" data-tab="week" id="weekRow"><span>Deine Woche</span><span class="muted">${
+    week.average ? `Schnitt ca. ${number(Math.round(week.average.kcal / 10) * 10)} kcal` : 'Noch nichts'
+  }</span></button>`;
+}
+
+export async function logFood(text) {
+  const said = text.trim();
+  if (!said || log.busy) return;
+  Object.assign(log, { busy: true, error: null, draft: said });
+  rerender();
+  try {
+    const answer = await askClaudeJson({
+      system: LOG_SYSTEM,
+      format: LOG_SCHEMA,
+      effort: 'low',
+      maxTokens: 3000,
+      messages: [{ role: 'user', content: said }],
+    });
+    const foods = Array.isArray(answer?.foods) ? answer.foods.slice(0, 20) : [];
+    if (!foods.length) throw new SessionError('nofood');
+    foods.forEach((item) => addExtra(localDay(), entryFrom(item)));
+    log.draft = '';
+  } catch (err) {
+    log.error = err;
+  }
+  log.busy = false;
+  rerender();
+}
+
+export const keepFoodDraft = (text) => {
+  log.draft = text;
+};
+
+// A new amount for an entry of today, from its select.
+export function changeAmount(select) {
+  setExtraFactor(localDay(), select.dataset.extra, Number(select.value));
+  rerender();
 }
 
 // What today's boxes leave open, and what fills it without cooking.
@@ -95,7 +205,11 @@ function supplementBlock(today) {
     </section>`;
 }
 
-const photoButton = `<label class="secondary as-button" id="dishPhotoLabel">${icon('camera')}Essen fotografieren<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>`;
+// Two ways to put food in besides words: a code on the package, or a photo of the plate.
+const photoButton = `<div class="capture">
+  <button type="button" class="secondary as-button" data-tab="scan" id="scanButton">${icon('barcode')}Barcode</button>
+  <label class="secondary as-button" id="dishPhotoLabel">${icon('camera')}Foto<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>
+</div>`;
 
 export function todayView() {
   const profile = getProfile();
@@ -120,9 +234,10 @@ export function todayView() {
         <button type="button" class="primary" data-tab="plan">Zum Wochenplan</button>
       </div>
       ${progress(null, localDay(), targets)}
-      ${supplementBlock(localDay())}
+      ${logBlock(localDay())}
       ${photoButton}
-      <div class="list">${goalRow}</div>`;
+      ${supplementBlock(localDay())}
+      <div class="list">${weekRow(localDay())}${goalRow}</div>`;
 
   const today = localDay();
   const cookToday = plan.cookDays.find((day) => day.date === today && !day.done);
@@ -174,9 +289,10 @@ export function todayView() {
     }
     ${notice ? `<p class="note" id="notice" role="status">${esc(notice)}</p>` : ''}
     ${progress(plan, today, targets)}
+    ${logBlock(today)}
+    ${photoButton}
     ${early ? '' : gapBlock(plan, today, targets)}
     ${supplementBlock(today)}
-    ${photoButton}
     <div class="list">
       ${rest
         .map(
@@ -195,11 +311,23 @@ export function todayView() {
           ? `<button type="button" class="row go" data-tab="plan"><span>Nächster Kochtag</span><span class="muted">${esc(dayLabel(upcoming.date))}, etwa ${upcoming.minutes} Min.</span></button>`
           : ''
       }
+      ${weekRow(today)}
       ${goalRow}
     </div>`;
 }
 
 export const todayActions = {
+  logAgain: (el) => {
+    const entry = recentFoods(getAllExtras(), localDay(), 50).find((item) => item.name === el.dataset.name);
+    if (!entry) return;
+    const { id, ...copy } = entry;
+    addExtra(localDay(), copy);
+    rerender();
+  },
+  removeExtra: (el) => {
+    removeExtra(localDay(), el.dataset.id);
+    rerender();
+  },
   skipMeal: (el) => {
     notice = SKIP_NOTES[skip(el.dataset.id)] ?? '';
     rerender();
@@ -207,11 +335,8 @@ export const todayActions = {
   eatFiller: (el) => {
     const filler = getPlan()?.fillers?.find((entry) => entry.id === el.dataset.id);
     if (!filler) return;
-    addExtra(localDay(), {
-      name: filler.name,
-      kcal: filler.nutrition.kcal,
-      protein: filler.nutrition.protein,
-    });
+    const { kcal, protein, fat, carbs } = filler.nutrition;
+    addExtra(localDay(), { name: filler.name, kcal, protein, fat, carbs });
     rerender();
   },
   takeSupplement: (el) => {

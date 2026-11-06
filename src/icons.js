@@ -16,6 +16,9 @@ const PATHS = {
   // Actions
   compose:
     '<path d="M11 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V13"/><path d="M17.6 3.9a1.9 1.9 0 0 1 2.7 2.7L12.5 14.4 9 15l.6-3.5z"/>',
+  barcode:
+    '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8 8v8M11 8v8M14 8v8M16.5 8v8"/>',
+  close: '<path d="M7 7l10 10M17 7 7 17"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   stop: '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/>',
