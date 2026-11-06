@@ -1044,7 +1044,7 @@ test('the list has everything for the week in one shop', async () => {
   await page.waitForSelector('#weekList');
   assert.match(await page.locator('#boxLine').innerText(), /14 Boxen/);
   await page.click('[data-tab="shop"]');
-  const list = await page.locator('.page').innerText();
+  const list = await page.locator('.page').textContent();
   assert.match(list, /Alles für die ganze Woche, Einkauf/);
   assert.match(list, /Geschätzt ca\. \d+ €/);
   assert.doesNotMatch(await page.locator('#shopFor').innerText(), /\.\./, 'the date ends the sentence');

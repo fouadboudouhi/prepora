@@ -214,8 +214,8 @@ export function profileView() {
             ],
             profile.cookDays
           )}
-          ${dayAndTime('cookDayLabel', two ? 'Erster Kochtag' : 'Kochtag', 'cookWeekday', 'cookTime', profile)}
-          ${two ? dayAndTime('cookDay2Label', 'Zweiter Kochtag', 'cookWeekday2', 'cookTime2', profile) : ''}
+          ${dayAndTime('cookDayLabel', two ? '1. Kochtag' : 'Kochtag', 'cookWeekday', 'cookTime', profile)}
+          ${two ? dayAndTime('cookDay2Label', '2. Kochtag', 'cookWeekday2', 'cookTime2', profile) : ''}
           ${dayAndTime('shopDayLabel', 'Einkauf', 'shopWeekday', 'shopTime', profile)}
           ${choice(
             'cookMinutes',
