@@ -125,8 +125,8 @@ function bigBoxNote(plan) {
   return `
     <section class="card" id="bigBoxes">
       <h2>Große Boxen</h2>
-      <p>Jede Box hat ca. ${number(Math.round(average / 50) * 50)} kcal. Das ist viel auf einmal und passt oft nicht in eine normale Box. Kochst du Frühstück mit, verteilt es sich auf drei kleinere Boxen am Tag.</p>
-      <button type="button" class="primary" data-action="addBreakfast">Ab nächster Woche Frühstück mitkochen</button>
+      <p>Jede Box hat ca. ${number(Math.round(average / 50) * 50)} kcal. Das ist viel auf einmal und passt oft nicht in eine normale Box. Kochst du ab der nächsten Woche Frühstück mit, verteilt es sich auf drei kleinere Boxen am Tag.</p>
+      <button type="button" class="primary" data-action="addBreakfast">Frühstück mitkochen</button>
       <button type="button" class="text-button" data-action="keepBigBoxes">Passt so</button>
     </section>`;
 }

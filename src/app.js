@@ -138,7 +138,7 @@ function moreView() {
     <div class="list">
       <div class="row"><span>Konto</span><span class="muted" id="accountName">${esc(session.username)}</span></div>
       <div class="row"><span>Claude</span><span class="muted" id="aiLine">${esc(aiLine(session.ai))}</span></div>
-      <div class="row"><span>Erinnerungen</span><span class="muted" id="pushLine">${pushOn() ? 'An' : 'Gehen beim ersten Kochtag an'}</span></div>
+      <div class="row"><span>Erinnerungen</span><span class="muted" id="pushLine">${pushOn() ? 'An' : 'Ab dem ersten Kochtag'}</span></div>
     </div>
     <button type="button" class="secondary" id="signOut">Abmelden</button>`;
 }

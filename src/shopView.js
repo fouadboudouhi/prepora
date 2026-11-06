@@ -41,7 +41,16 @@ export function shopView() {
         ? `<h2 class="section">Im Wagen</h2><div class="list" id="inCart">${inCart.map((item) => itemRow(item, true)).join('')}</div>`
         : ''
     }
-    ${notes.left.length ? `<p class="note" id="leftOver">Bleibt übrig und kommt in den nächsten Plan: ${esc(listed(notes.left))}.</p>` : ''}`;
+    ${
+      notes.left.length
+        ? `<details class="guide" id="leftOver">
+             <summary>Bleibt übrig: ${notes.left.length} ${notes.left.length === 1 ? 'Sache' : 'Sachen'}</summary>
+             <div><p>Kommt in den nächsten Plan.</p><dl>${notes.left
+               .map((entry) => `<dt>${esc(entry.name)}</dt><dd>ca. ${number(entry.grams)} g</dd>`)
+               .join('')}</dl></div>
+           </details>`
+        : ''
+    }`;
 }
 
 export const shopActions = {
