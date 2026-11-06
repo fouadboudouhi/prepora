@@ -1,4 +1,4 @@
-const VERSION = 'v16';
+const VERSION = 'v17';
 // Volumora lives on the same domain: only caches with this prefix are ours to touch.
 const PREFIX = 'prepora-';
 const CACHE = `${PREFIX}${VERSION}`;
@@ -11,6 +11,7 @@ const ASSETS = [
   './src/app.js',
   './src/actions.js',
   './src/calendar.js',
+  './src/demo.js',
   './src/dish.js',
   './src/goalAdvice.js',
   './src/icons.js',
@@ -81,7 +82,9 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(e.request)
         .then((res) => {
-          if (res.ok) store(e, './index.html', res.clone());
+          // The demo page is a document too, but never the start page.
+          const start = !new URL(e.request.url).pathname.endsWith('demo.html');
+          if (res.ok && start) store(e, './index.html', res.clone());
           return res;
         })
         .catch(() => caches.match('./index.html'))

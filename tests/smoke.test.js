@@ -884,6 +884,37 @@ test('the service worker only ever touches caches with its own prefix', () => {
   assert.match(worker, /k\.startsWith\(PREFIX\) && k !== CACHE/);
 });
 
+test('the demo makes a week without an account, never reaches the server and keeps nothing', async () => {
+  const context = await browser.newContext({ locale: 'de-DE' });
+  const calls = [];
+  await context.route(`${SERVER}/**`, (route) => {
+    calls.push(route.request().url());
+    return route.abort();
+  });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(`${baseURL}/demo.html`);
+  await page.click('[data-tab="plan"]');
+  await page.click('[data-action="newWeek"]');
+  await page.waitForSelector('#weekList', { timeout: 8000 });
+  assert.match(await page.locator('#recipeList').innerText(), /Chili con Carne/);
+  await page.click('nav [data-tab="chat"]');
+  await page.fill('#chatForm textarea', 'Mach mir einen neuen Plan');
+  await page.press('#chatForm textarea', 'Enter');
+  await page.waitForFunction(() => document.body.innerText.includes('Das ist die Demo'), null, {
+    timeout: 8000,
+  });
+  assert.deepEqual(calls, []);
+  const kept = await page.evaluate(() => {
+    const real = Object.getOwnPropertyDescriptor(Window.prototype, 'localStorage')?.get?.call(window);
+    return real ? Object.keys(real).filter((key) => key.startsWith('prepora-')) : [];
+  });
+  assert.deepEqual(kept, []);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('every precached file exists and every module is precached', () => {
   const worker = fs.readFileSync('sw.js', 'utf8');
   const files = [...worker.matchAll(/'\.\/([^']+)'/g)].map((match) => match[1]);
