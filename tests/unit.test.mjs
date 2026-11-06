@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { kept } from '../src/agent.js';
+import { entryFromProduct, lookupProduct, productFrom, validCode } from '../src/barcode.js';
 import { calendarText } from '../src/calendar.js';
 import { dayIntake, entryFrom, recentFoods, weekIntake } from '../src/foodLog.js';
 import { assessDish } from '../src/dish.js';
@@ -770,5 +771,61 @@ test('the week leaves out today and empty days; often eaten comes first and not 
   assert.deepEqual(
     recentFoods(extras, '2026-11-06').map((entry) => entry.name),
     ['Riegel']
+  );
+});
+
+test('a barcode passes only with the right check digit', () => {
+  assert.equal(validCode('3017620422003'), true);
+  assert.equal(validCode('3017620422004'), false);
+  assert.equal(validCode('96385074'), true);
+  assert.equal(validCode('036000291452'), true);
+  assert.equal(validCode('12345'), false);
+  assert.equal(validCode('30176204220x3'), false);
+});
+
+test('Open Food Facts answers become a product, energy in kJ only is turned into kcal', () => {
+  const answer = {
+    status: 1,
+    product: {
+      product_name: 'Nutella',
+      brands: 'Nutella, Ferrero',
+      quantity: '400 g',
+      serving_size: '15 g (1 portion)',
+      nutriments: { 'energy-kj_100g': 2252, proteins_100g: 6.3, fat_100g: 30.9, carbohydrates_100g: 57.5 },
+    },
+  };
+  assert.deepEqual(productFrom('3017620422003', answer), {
+    code: '3017620422003',
+    name: 'Nutella',
+    brand: 'Ferrero',
+    per100: { kcal: 538, protein: 6.3, fat: 30.9, carbs: 57.5 },
+    serving: 15,
+    pack: 400,
+  });
+  assert.equal(productFrom('1', { status: 0 }), null);
+  assert.equal(
+    productFrom('1', { status: 1, product: { product_name: 'Wasser', nutriments: {} } }).per100,
+    null
+  );
+  assert.deepEqual(entryFromProduct(productFrom('3017620422003', answer), 15), {
+    name: 'Nutella, 15 g',
+    kcal: 81,
+    protein: 1,
+    fat: 5,
+    carbs: 9,
+    barcode: '3017620422003',
+  });
+});
+
+test('an unknown barcode is no product, and only the number goes out', async () => {
+  let asked = '';
+  const fetcher = async (url) => {
+    asked = url;
+    return { status: 404, ok: false };
+  };
+  assert.equal(await lookupProduct('4006381333931', fetcher), null);
+  assert.match(
+    asked,
+    /^https:\/\/world\.openfoodfacts\.org\/api\/v2\/product\/4006381333931\.json\?fields=[a-z_,0-9]+$/
   );
 });

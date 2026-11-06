@@ -205,7 +205,11 @@ function supplementBlock(today) {
     </section>`;
 }
 
-const photoButton = `<label class="secondary as-button" id="dishPhotoLabel">${icon('camera')}Essen fotografieren<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>`;
+// Two ways to put food in besides words: a code on the package, or a photo of the plate.
+const photoButton = `<div class="capture">
+  <button type="button" class="secondary as-button" data-tab="scan" id="scanButton">${icon('barcode')}Barcode</button>
+  <label class="secondary as-button" id="dishPhotoLabel">${icon('camera')}Foto<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>
+</div>`;
 
 export function todayView() {
   const profile = getProfile();

@@ -1330,3 +1330,129 @@ test('Claude in the chat logs what was eaten, and one tap takes it back', async 
   assert.deepEqual(await today(), []);
   await context.close();
 });
+
+const NUTELLA = {
+  status: 1,
+  product: {
+    product_name: 'Nutella',
+    brands: 'Ferrero',
+    product_quantity: 400,
+    nutriments: { 'energy-kcal_100g': 539, proteins_100g: 6.3, fat_100g: 30.9, carbohydrates_100g: 57.5 },
+  },
+};
+async function withFoodFacts(context) {
+  const asked = [];
+  await context.route('https://world.openfoodfacts.org/**', (route) => {
+    asked.push(route.request().url());
+    const found = route.request().url().includes('/3017620422003.json');
+    return route.fulfill({
+      status: found ? 200 : 404,
+      headers: { 'access-control-allow-origin': '*' },
+      json: found ? NUTELLA : { status: 0 },
+    });
+  });
+  return asked;
+}
+
+test('a barcode typed in finds the product, the amount sets the numbers, and it lands on today', async () => {
+  const { context, page, errors } = await open({ storage: ready });
+  const asked = await withFoodFacts(context);
+  await page.click('#scanButton');
+  assert.equal(await page.locator('h1').innerText(), 'Barcode scannen');
+  assert.equal(await page.locator('[aria-current="page"]').getAttribute('data-tab'), 'today');
+  await page.fill('#scanCode [name="code"]', '3017620422004');
+  await page.press('#scanCode [name="code"]', 'Enter');
+  assert.match(await page.locator('#scanError').innerText(), /keine gültige Nummer/);
+  assert.equal(asked.length, 0);
+
+  await page.fill('#scanCode [name="code"]', '3017620422003');
+  await page.press('#scanCode [name="code"]', 'Enter');
+  await page.waitForSelector('#scanResult h2');
+  const card = await page.locator('#scanResult').innerText();
+  assert.match(card, /Ferrero[\s\S]*Nutella[\s\S]*Pro 100 g: 539 kcal/);
+  assert.match(card, /Packung, 400 g/);
+  await page.fill('[name="scanGrams"]', '15');
+  assert.equal(await page.locator('#scanTotal').innerText(), 'ca. 81 kcal, 1 g Eiweiß');
+  await page.click('[data-action="scanLog"]');
+  assert.equal(await page.locator('h1').innerText(), 'Heute');
+  const list = await page.locator('#eatenList').innerText();
+  assert.match(list, /Nutella, 15 g\s+ca\. 81 kcal, 1 g Eiweiß/);
+  assert.doesNotMatch(list, /geschätzt/);
+  assert.deepEqual(
+    asked.map((url) => new URL(url).pathname),
+    ['/api/v2/product/3017620422003.json']
+  );
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('a product Open Food Facts does not know says so and points to words instead', async () => {
+  const { context, page } = await open({ storage: ready });
+  await withFoodFacts(context);
+  await page.click('#scanButton');
+  await page.fill('#scanCode [name="code"]', '4006381333931');
+  await page.press('#scanCode [name="code"]', 'Enter');
+  await page.waitForSelector('#scanResult');
+  assert.match(
+    await page.locator('#scanResult').innerText(),
+    /kennt die Nummer 4006381333931 nicht[\s\S]*eigenen Worten/
+  );
+  await page.click('[data-action="scanAgain"]');
+  assert.equal(await page.locator('#scanCode').count(), 1);
+  await context.close();
+});
+
+test('ZXing reads a real EAN-13 the way Safari would need it', async () => {
+  const { context, page } = await open({ storage: ready });
+  const code = await page.evaluate(async () => {
+    const L = [
+      '0001101',
+      '0011001',
+      '0010011',
+      '0111101',
+      '0100011',
+      '0110001',
+      '0101111',
+      '0111011',
+      '0110111',
+      '0001011',
+    ];
+    const R = L.map((bits) => [...bits].map((bit) => (bit === '0' ? '1' : '0')).join(''));
+    const G = R.map((bits) => [...bits].reverse().join(''));
+    const PARITY = [
+      'LLLLLL',
+      'LLGLGG',
+      'LLGGLG',
+      'LLGGGL',
+      'LGLLGG',
+      'LGGLLG',
+      'LGGGLL',
+      'LGLGLG',
+      'LGLGGL',
+      'LGGLGL',
+    ];
+    const digits = [...'4006381333931'].map(Number);
+    const left = digits
+      .slice(1, 7)
+      .map((d, i) => (PARITY[digits[0]][i] === 'L' ? L : G)[d])
+      .join('');
+    const right = digits
+      .slice(7)
+      .map((d) => R[d])
+      .join('');
+    const bits = `101${left}01010${right}101`;
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const draw = canvas.getContext('2d');
+    draw.fillStyle = '#fff';
+    draw.fillRect(0, 0, canvas.width, canvas.height);
+    draw.fillStyle = '#000';
+    [...bits].forEach((bit, i) => bit === '1' && draw.fillRect(130 + i * 4, 140, 4, 200));
+    const { makeDecoder } = await import('/src/scanView.js');
+    const decode = await makeDecoder({ native: false });
+    return decode(canvas);
+  });
+  assert.equal(code, '4006381333931');
+  await context.close();
+});

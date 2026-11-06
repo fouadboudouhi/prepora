@@ -110,6 +110,7 @@ const BACK = {
   stock: 'Tiefkühler',
   photo: 'Foto',
   week: 'Woche',
+  scan: 'Scanner',
 };
 
 // The chat has the screen to itself, like a messenger: a bar on top, the messages scrolling in between and the field
