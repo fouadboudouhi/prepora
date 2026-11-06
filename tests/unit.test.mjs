@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { kept } from '../src/agent.js';
 import { calendarText } from '../src/calendar.js';
+import { dayIntake, entryFrom, recentFoods, weekIntake } from '../src/foodLog.js';
 import { assessDish } from '../src/dish.js';
 import { adviceRequest, validAdvice } from '../src/goalAdvice.js';
 import { nutritionOf } from '../src/foods.js';
@@ -701,4 +702,73 @@ test('after a fallback mid-answer only the earlier text goes back, with all that
     ['Moment', ', gleich.', 'y']
   );
   assert.equal(kept(content.slice(0, 3)).length, 3);
+});
+
+test('a known food is counted by the app, anything else keeps the estimate within limits', () => {
+  assert.deepEqual(
+    entryFrom({ name: 'Skyr', food: 'skyr', grams: 200, kcal: 5, protein: 0, fat: 0, carbs: 0 }, 'a'),
+    {
+      id: 'a',
+      name: 'Skyr',
+      kcal: 130,
+      protein: 22,
+      fat: 0,
+      carbs: 8,
+    }
+  );
+  const guessed = entryFrom({
+    name: '',
+    food: 'quatsch',
+    grams: -3,
+    kcal: 99999,
+    protein: -5,
+    fat: '12',
+    carbs: null,
+  });
+  assert.deepEqual(guessed, {
+    id: undefined,
+    name: 'Essen',
+    kcal: 4000,
+    protein: 0,
+    fat: 12,
+    carbs: 0,
+    estimated: true,
+  });
+});
+
+test('a day counts boxes by the day they were eaten and entries with their amount', () => {
+  const plan = {
+    id: 'p',
+    recipes: [{ id: 'r', name: 'Chili', nutrition: { kcal: 600, protein: 40, fat: 20, carbs: 50 } }],
+    meals: [
+      { id: '1', date: '2026-11-05', meal: 'Mittagessen', recipeId: 'r', eaten: '2026-11-06' },
+      { id: '2', date: '2026-11-06', meal: 'Abendessen', recipeId: 'r' },
+    ],
+  };
+  const extras = {
+    '2026-11-06': [{ name: 'Riegel', kcal: 200, protein: 20, fat: 8, carbs: 20, factor: 1.5 }],
+  };
+  const day = dayIntake('2026-11-06', [plan, plan], extras);
+  assert.deepEqual(day.total, { kcal: 900, protein: 70, fat: 32, carbs: 80 });
+  assert.equal(day.entries[0].name, 'Mittagessen: Chili');
+  assert.equal(day.entries[1].id, 'x-0');
+});
+
+test('the week leaves out today and empty days; often eaten comes first and not twice a day', () => {
+  const extras = {
+    '2026-11-03': [{ name: 'Riegel', kcal: 1000, protein: 50 }],
+    '2026-11-04': [
+      { name: 'Riegel', kcal: 2000, protein: 100 },
+      { name: 'Apfel', kcal: 50, protein: 0 },
+    ],
+    '2026-11-06': [{ name: 'Apfel', kcal: 3000, protein: 0 }],
+  };
+  const week = weekIntake('2026-11-06', [], extras);
+  assert.equal(week.days.length, 7);
+  assert.equal(week.counted, 2);
+  assert.equal(week.average.kcal, 1525);
+  assert.deepEqual(
+    recentFoods(extras, '2026-11-06').map((entry) => entry.name),
+    ['Riegel']
+  );
 });

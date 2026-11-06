@@ -1417,3 +1417,82 @@ label.row:active {
   width: 20px;
   height: 20px;
 }
+
+/* Tracking: fat and carbs under the bars, the entry field, what came often lately, and today's list */
+.day-line .macros {
+  grid-column: 1 / -1;
+  margin: -8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+#foodLog .composer {
+  margin-top: 4px;
+}
+.pills.recent {
+  margin-top: 10px;
+}
+#eatenList {
+  margin-top: 12px;
+}
+.row.eaten {
+  gap: 8px;
+  padding-right: 8px;
+}
+.row.eaten .block {
+  font-weight: 500;
+}
+.amount {
+  flex: none;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: center;
+  text-align-last: center;
+  cursor: pointer;
+}
+.amount:focus-visible,
+.mini:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.mini {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.mini .glyph {
+  width: 18px;
+  height: 18px;
+}
+
+/* Deine Woche: one row per day, kcal and protein side by side */
+.week-day .week-values {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  width: 100%;
+  margin-top: 4px;
+  font-weight: 500;
+}
+.week-values .bar {
+  margin-top: 6px;
+}
+#weekAverage h2 {
+  margin-top: 4px;
+}
+#weekAverage p + p {
+  margin-top: 6px;
+}

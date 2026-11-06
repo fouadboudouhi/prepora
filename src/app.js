@@ -14,7 +14,8 @@ import { addStock, stockActions, stockView } from './stockView.js';
 import { addSupplement, supplementActions, supplementsView } from './supplementsView.js';
 import { clearAfterSignOut, startSync, syncNow } from './sync.js';
 import { tasteActions, tasteView } from './tasteView.js';
-import { todayActions, todayView } from './todayView.js';
+import { changeAmount, keepFoodDraft, logFood, todayActions, todayView } from './todayView.js';
+import { weekView } from './weekView.js';
 import { errorText, esc, number, setOpener, setRedraw } from './ui.js';
 import { updateFromVolumora } from './volumora.js';
 
@@ -33,7 +34,10 @@ const SUB_VIEWS = {
   supplements: supplementsView,
   recipes: recipesView,
   photo: photoView,
+  week: weekView,
 };
+// Screens that belong to Heute keep it lit; the rest open from Mehr.
+const UNDER_TODAY = ['photo', 'week'];
 const ACTIONS = {
   ...todayActions,
   ...planActions,
@@ -134,7 +138,7 @@ function draw() {
   }
   if (current === 'chat') return drawChat(app, chatBack);
   const sub = SUB_VIEWS[current];
-  const lit = current === 'photo' ? 'today' : sub ? 'more' : current;
+  const lit = UNDER_TODAY.includes(current) ? 'today' : sub ? 'more' : current;
   const tab = TABS.find((entry) => entry.id === lit) ?? TABS[0];
   const content = sub ? sub() : `<h1>${tab.title}</h1>${tab.view()}`;
   app.innerHTML = `
@@ -262,6 +266,11 @@ const FORMS = {
     document.activeElement?.blur?.();
     recheckDish(name);
   },
+  foodLogForm(form) {
+    const text = form.elements.food.value;
+    form.elements.food.blur();
+    logFood(text);
+  },
   chatForm(form) {
     const text = form.elements.message.value;
     form.elements.message.blur();
@@ -308,6 +317,7 @@ const saveProfileChange = (event) => {
 };
 app.addEventListener('change', (event) => {
   saveProfileChange(event);
+  if (event.target.matches?.('select[data-extra]')) changeAmount(event.target);
   const file = event.target.files?.[0];
   if (file) {
     const readers = {
@@ -324,6 +334,7 @@ app.addEventListener('change', (event) => {
 });
 app.addEventListener('input', (event) => {
   saveProfileChange(event);
+  if (event.target.closest?.('#foodLogForm')) keepFoodDraft(event.target.value);
   if (event.target.closest?.('#chatForm')) {
     keepDraft(event.target.value);
     // The field grows with the text, up to a few lines.
@@ -335,7 +346,7 @@ app.addEventListener('input', (event) => {
 // Return sends, Shift and Return makes a new line.
 app.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-  const form = event.target.closest?.('#chatForm');
+  const form = event.target.closest?.('#chatForm, #foodLogForm');
   if (!form) return;
   event.preventDefault();
   form.requestSubmit();

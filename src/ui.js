@@ -21,6 +21,7 @@ const ERRORS = {
   nowish: 'Schreib erst kurz, was du erreichen willst.',
   server: 'Beim Server ist etwas schiefgelaufen.',
   interrupted: 'Die App wurde geschlossen, bevor die Antwort kam. Deine Nachricht steht wieder im Feld.',
+  nofood: 'Darin habe ich nichts zu essen gefunden. Schreib es etwas genauer.',
   stale: 'Das geht nicht mehr zurück, weil sich seitdem etwas geändert hat.',
   aborted: 'Angehalten.',
 };
