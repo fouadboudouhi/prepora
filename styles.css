@@ -1564,3 +1564,28 @@ label.row:active {
   display: block;
   margin: 8px auto 0;
 }
+
+/* Yesterday's question: two answers side by side */
+.card .two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 14px;
+}
+.card .two button {
+  margin: 0;
+}
+#yesterday .list {
+  margin-top: 12px;
+  background: var(--cloud);
+}
+#yesterday > .primary {
+  margin-top: 12px;
+}
+#bigBoxes .text-button {
+  display: block;
+  margin: 8px auto 0;
+}
+#leftovers {
+  margin-top: 20px;
+}

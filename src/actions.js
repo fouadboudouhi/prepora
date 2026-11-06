@@ -5,6 +5,8 @@ import {
   PLAN_SCHEMA,
   PLAN_SYSTEM,
   buildSlots,
+  carryOver,
+  stillGood,
   finishPlan,
   localDay,
   mealName,
@@ -31,6 +33,20 @@ export const getTaste = () => read('taste', {});
 export const savePlan = (plan) => write('plan', plan);
 export const saveStock = (stock) => write('stock', stock);
 export const saveTaste = (taste) => write('taste', taste);
+
+// What is at home from earlier shops: comes off the next list and goes into the next plan.
+export const getPantry = (today = localDay()) =>
+  read('pantry', []).filter((entry) => stillGood(entry, today));
+export const savePantry = (list) => write('pantry', list);
+
+// Once the shop day of the plan has come, its packs are bought: what they leave over is at home from now on.
+export function settleShopping(today = localDay()) {
+  const plan = getPlan();
+  if (!plan || plan.settled || !plan.shopOn || plan.shopOn > today) return false;
+  savePantry(carryOver(plan, today));
+  savePlan({ ...plan, settled: true });
+  return true;
+}
 
 export function getFridge() {
   const note = read('fridge', null);
@@ -93,12 +109,12 @@ function adopt(plan) {
 
 // One correction is worth paying for when the answer breaks a rule. A second one is not; then the person hears it.
 async function requestPlan(options) {
-  const { profile, slots, start, stock } = options;
+  const { profile, slots, start, stock, pantry } = options;
   const content = planRequest(options);
   const ask = (messages) =>
     askClaudeJson({ system: PLAN_SYSTEM, messages, maxTokens: 32000, effort: 'medium', format: PLAN_SCHEMA });
   const first = await ask([{ role: 'user', content }]);
-  const result = finishPlan(first, { profile, slots, start, stock });
+  const result = finishPlan(first, { profile, slots, start, stock, pantry });
   if (!result.problems.length) return result.plan;
   const correction = `Dieser Plan bricht Regeln, korrigiere ihn:\n${result.problems.join('\n')}`;
   const second = await ask([
@@ -106,7 +122,7 @@ async function requestPlan(options) {
     { role: 'assistant', content: JSON.stringify(first) },
     { role: 'user', content: correction },
   ]);
-  const again = finishPlan(second, { profile, slots, start, stock });
+  const again = finishPlan(second, { profile, slots, start, stock, pantry });
   if (again.problems.length) throw new SessionError('badplan', again.problems[0]);
   return again.plan;
 }
@@ -149,6 +165,7 @@ export function newWeek(wish = '') {
       taste: getTaste(),
       fridge: getFridge(),
       stock: stock.filter((item) => placed.used.includes(item.id)),
+      pantry: getPantry(),
       start,
       slots: placed.slots,
       correction: wishLine(wish),
@@ -171,6 +188,7 @@ export function replaceRecipe(recipeId, wish = '') {
       taste,
       fridge: [],
       stock: [],
+      pantry: plan.pantry ?? [],
       start: plan.start,
       slots,
       previous: {
@@ -207,7 +225,7 @@ export function repeatBestWeek() {
   const best = bestWeek();
   if (!best) return;
   const profile = getProfile();
-  adopt(repeatPlan(best, nextStart(profile.cookWeekday ?? 0)));
+  adopt(repeatPlan(best, nextStart(profile.cookWeekday ?? 0), getPantry()));
   rerender();
 }
 

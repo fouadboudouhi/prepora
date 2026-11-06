@@ -16,6 +16,7 @@ const SYNCED = [
   'extras',
   'supplements',
   'myRecipes',
+  'pantry',
 ];
 const DELAY = 5000;
 

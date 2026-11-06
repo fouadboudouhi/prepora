@@ -188,7 +188,20 @@ function tasteLines(taste) {
 }
 
 // What Claude gets to know for this one week.
-export function planRequest({ profile, taste, slots, start, fridge, correction, previous, ownRecipes = [] }) {
+export function planRequest({
+  profile,
+  taste,
+  slots,
+  start,
+  fridge,
+  correction,
+  previous,
+  ownRecipes = [],
+  pantry = [],
+}) {
+  const fresh = pantry.filter(isPerishable);
+  const shelf = pantry.filter((entry) => !isPerishable(entry));
+  const listed = (entries) => entries.map((entry) => `${entry.name} ${entry.grams} g`).join(', ');
   const targets = dailyTargets(profile);
   const dates = cookDates(profile, start);
   const gap = targets ? dayGap(profile, targets) : null;
@@ -205,6 +218,10 @@ export function planRequest({ profile, taste, slots, start, fridge, correction, 
     profile.avoid ? `Mag oder verträgt nicht: ${profile.avoid}.` : '',
     ...tasteLines(taste),
     fridge?.length ? `Noch im Kühlschrank, bitte verbrauchen: ${fridge.join(', ')}.` : '',
+    fresh.length ? `Frisch übrig vom letzten Einkauf, bitte zuerst verbrauchen: ${listed(fresh)}.` : '',
+    shelf.length
+      ? `Noch zu Hause, gern verwenden, die App zieht es vom Einkauf ab: ${listed(shelf)}. Nutze dafür dieselbe "food"-Kennung.`
+      : '',
     `Einkauf: einmal pro Woche, am ${shopDate(profile, start)}.`,
     profile.budget ? `Wochenbudget für den Einkauf: etwa ${profile.budget} Euro.` : '',
     gap ? `Lücke pro Tag und Person für "fillers": ca. ${gap.kcal} kcal und ${gap.protein} g Eiweiß.` : '',
@@ -255,7 +272,7 @@ const perPortion = (total, portions) =>
   Object.fromEntries(Object.entries(total).map(([key, value]) => [key, Math.round(value / portions)]));
 
 // Turns Claude's answer into the plan the app uses, or says what is wrong with it. `problems` go back to Claude once.
-export function finishPlan(answer, { profile, slots, start, stock = [] }) {
+export function finishPlan(answer, { profile, slots, start, stock = [], pantry = [] }) {
   const problems = [];
   const people = profile.people ?? 1;
   const recipes = new Map((answer.recipes ?? []).map((recipe) => [recipe.id, recipe]));
@@ -368,6 +385,7 @@ export function finishPlan(answer, { profile, slots, start, stock = [] }) {
     meals,
     cookDays: steps,
     stockUsed: stock.map((item) => item.id),
+    pantry,
   };
   plan.cost = shoppingCost(plan);
   if (profile.budget && plan.cost > profile.budget * OVER_BUDGET)
@@ -376,10 +394,12 @@ export function finishPlan(answer, { profile, slots, start, stock = [] }) {
 }
 
 // Same food, new dates: a proven week again, without asking Claude.
-export function repeatPlan(old, start) {
+export function repeatPlan(previous, start, pantry = []) {
+  const { settled, ...old } = previous;
   const shift = dayNumber(start) - dayNumber(old.start);
-  return {
+  const plan = {
     ...old,
+    pantry,
     id: `${start}-${Date.now()}`,
     start,
     ...(old.shopOn ? { shopOn: addDays(old.shopOn, shift) } : {}),
@@ -395,6 +415,7 @@ export function repeatPlan(old, start) {
     cookDays: old.cookDays.map(({ done, ...day }) => ({ ...day, date: addDays(day.date, shift) })),
     stockUsed: [],
   };
+  return { ...plan, cost: shoppingCost(plan) };
 }
 
 // Freezer portions go to the end of the week, where a frozen box belongs, and need no recipe from Claude.
@@ -457,18 +478,31 @@ function mergedIngredients(plan) {
   return [...items.values()];
 }
 
-// The list for the shop: same food added up, in whole packs, and what stays over.
+// What is at home already counts: it comes off before packs are counted.
+const PERISHABLE = ['Fleisch und Fisch', 'Kühlregal', 'Gemüse und Obst'];
+const FRESH_DAYS = 6;
+const SHELF_DAYS = 90;
+const haveOf = (plan, id) => (plan.pantry ?? []).find((item) => item.id === id)?.grams ?? 0;
+
+function packsFor(item, have) {
+  const need = Math.max(0, item.grams - have);
+  const packs = item.pack ? Math.ceil(need / item.pack) : 0;
+  return { need, packs, left: packs ? packs * item.pack - need : 0, spare: Math.max(0, have - item.grams) };
+}
+
+// The list for the shop: same food added up, what is at home taken off, in whole packs.
 export function shoppingList(plan, supplements = []) {
   const groups = new Map();
   for (const item of mergedIngredients(plan)) {
-    const packs = item.pack ? Math.ceil(item.grams / item.pack) : 0;
-    const left = packs ? packs * item.pack - item.grams : 0;
+    const have = item.category === CHECK_GROUP ? 0 : haveOf(plan, item.id);
+    const { need, packs, left } = packsFor(item, have);
+    if (item.grams && !need) continue;
     const detail =
       item.category === CHECK_GROUP || !item.grams
         ? 'Für diese Woche nötig'
         : packs
-          ? `${PACK_WORD(packs)} à ${amount(item.pack)}${left >= item.pack * 0.25 ? `, ${amount(left)} bleiben übrig` : ''}`
-          : amount(item.grams);
+          ? `${PACK_WORD(packs)} à ${amount(item.pack)}${have ? `, ${amount(have)} hast du noch` : ''}`
+          : amount(need);
     const category = !item.grams ? CHECK_GROUP : (item.category ?? 'Vorrat');
     if (!groups.has(category)) groups.set(category, []);
     groups.get(category).push({ id: item.id, name: item.name, detail, left });
@@ -488,12 +522,56 @@ export function shoppingList(plan, supplements = []) {
     .map(([name, entries]) => ({ name, items: entries.sort((a, b) => a.name.localeCompare(b.name, 'de')) }));
 }
 
+// Said once above the list instead of on every line: what comes from home, and what stays over for later.
+export function shoppingNotes(plan) {
+  const fromHome = [];
+  const left = [];
+  for (const item of mergedIngredients(plan)) {
+    if (item.category === CHECK_GROUP || !item.grams) continue;
+    const have = haveOf(plan, item.id);
+    const after = packsFor(item, have);
+    if (have) fromHome.push({ name: item.name, grams: Math.round(Math.min(have, item.grams)) });
+    if (after.left >= 30 && after.left >= item.pack * 0.2)
+      left.push({ name: item.name, grams: Math.round(after.left) });
+  }
+  return { fromHome, left };
+}
+
+// After the shop: what the packs leave over, plus what was at home and this plan did not need, goes into the next
+// plan. Fresh food only for a few days, the cupboard for months.
+export function carryOver(plan, today) {
+  const pantry = plan.pantry ?? [];
+  const kept = new Map();
+  const bought = plan.shopOn ?? plan.start;
+  const used = new Set();
+  for (const item of mergedIngredients(plan)) {
+    if (item.category === CHECK_GROUP || !item.grams) continue;
+    used.add(item.id);
+    const home = pantry.find((entry) => entry.id === item.id);
+    const { left, spare } = packsFor(item, home?.grams ?? 0);
+    const grams = Math.round(left + spare);
+    if (grams < 30 || (item.pack && grams < item.pack * 0.2)) continue;
+    kept.set(item.id, {
+      id: item.id,
+      name: item.name,
+      grams,
+      category: home?.category === 'Tiefkühl' ? 'Tiefkühl' : (item.category ?? 'Vorrat'),
+      since: spare && home && !left ? home.since : bought,
+    });
+  }
+  pantry.filter((entry) => !used.has(entry.id)).forEach((entry) => kept.set(entry.id, entry));
+  return [...kept.values()].filter((entry) => stillGood(entry, today));
+}
+export const isPerishable = (entry) => PERISHABLE.includes(entry.category);
+export const stillGood = (entry, today) =>
+  dayNumber(today) - dayNumber(entry.since) <= (isPerishable(entry) ? FRESH_DAYS : SHELF_DAYS);
+
 // A rough sum from Claude's guessed prices, never a promise: supermarkets do not publish theirs.
 export function shoppingCost(plan) {
-  const total = mergedIngredients(plan).reduce(
-    (sum, item) => sum + (item.pack ? Math.ceil(item.grams / item.pack) * item.packEuro : item.loose),
-    0
-  );
+  const total = mergedIngredients(plan).reduce((sum, item) => {
+    if (!item.pack) return sum + item.loose;
+    return sum + packsFor(item, haveOf(plan, item.id)).packs * item.packEuro;
+  }, 0);
   return Math.round(total);
 }
 
