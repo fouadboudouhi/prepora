@@ -790,6 +790,33 @@ test('the next plan uses up the freezer first, without a recipe from Claude', as
   await context.close();
 });
 
+test('a plan can have any length, start today and be thrown away again', async () => {
+  const { context, page } = await open({ storage: ready });
+  await page.click('[data-tab="plan"]');
+  await page.click('[data-action="shapeOpen"]');
+  const days = Number(await page.locator('#shape-days').innerText());
+  for (let i = days; i > 4; i -= 1)
+    await page.click('[data-action="shapeStep"][data-key="days"][data-by="-1"]');
+  assert.equal(await page.locator('#shape-days').innerText(), '4');
+  await page.click('[data-action="shapeStart"][data-start="today"]');
+  await page.click('[data-action="shapePlan"]');
+  await page.waitForSelector('#weekList');
+  const plan = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')));
+  const today = await page.evaluate(() => {
+    const at = new Date();
+    return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+  });
+  assert.equal(plan.start, today);
+  assert.equal(plan.days, 4);
+  assert.equal(new Set(plan.meals.map((meal) => meal.date)).size, 4);
+  await page.click('#discardPlan');
+  assert.match(await page.locator('#discardPlan').innerText(), /Wirklich/);
+  await page.click('#discardPlan');
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan') ?? 'null')), null);
+  await page.waitForSelector('[data-action="newWeek"]');
+  await context.close();
+});
+
 test('a failed plan says why and keeps the screen usable', async () => {
   const { context, page } = await open({ storage: ready, claude: 402 });
   await page.click('[data-tab="plan"]');

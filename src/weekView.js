@@ -49,7 +49,8 @@ export function weekView() {
         )
         .join('')}
     </div>
-    <p class="note">Heute zählt erst im Schnitt, wenn der Tag vorbei ist. Tage ohne Einträge zählen nicht mit.</p>`;
+    <button type="button" class="secondary" data-action="rateHabits" id="rateHabits">Von Claude bewerten lassen</button>
+    <p class="note">Alle Werte sind ungefähr. Heute zählt erst im Schnitt, wenn der Tag vorbei ist. Tage ohne Einträge zählen nicht mit.</p>`;
 }
 
 // A plain word on the average, with room for the usual day-to-day swing.

@@ -2,7 +2,7 @@
 import { applyTrend, getPlan, getStock, settleShopping, updateBlocks } from './actions.js';
 import { chatActions, drawChat, keepDraft, send, watchKeyboard } from './chatView.js';
 import { askHelper, cookActions, cookView, cooking, startTicking } from './cookView.js';
-import { planActions, planView, readFridgePhoto } from './planView.js';
+import { keepShapeWish, planActions, planView, readFridgePhoto } from './planView.js';
 import { photoActions, photoView, readDishPhoto, recheckDish } from './photoView.js';
 import { saveFromForm, profileActions, profileView, showTargets } from './profileView.js';
 import { importRecipe, importRecipePhoto, recipeActions, recipesView } from './recipesView.js';
@@ -50,6 +50,10 @@ const SUB_VIEWS = {
 // Screens that belong to Heute keep it lit; the rest open from Mehr.
 const UNDER_TODAY = ['photo', 'week', 'scan'];
 const ACTIONS = {
+  rateHabits: () => {
+    open('chat');
+    send('Bewerte meine Essgewohnheiten der letzten zwei Wochen.');
+  },
   ...todayActions,
   ...planActions,
   ...shopActions,
@@ -393,6 +397,7 @@ app.addEventListener('change', (event) => {
 app.addEventListener('input', (event) => {
   saveProfileChange(event);
   if (event.target.closest?.('#foodLogForm')) keepFoodDraft(event.target.value);
+  if (event.target.name === 'shapeWish') keepShapeWish(event.target.value);
   if (event.target.name === 'scanGrams') setScanGrams(event.target.value);
   if (event.target.matches?.('#foodLogForm textarea')) {
     event.target.style.height = 'auto';
