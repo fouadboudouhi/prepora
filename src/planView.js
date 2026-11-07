@@ -1,7 +1,9 @@
 // Der Wochenplan: one tap makes a week. Everything else on this screen is optional.
 import {
   bestWeek,
+  deleteOldPlans,
   discardPlan,
+  getHistory,
   getFridge,
   getPlan,
   newWeek,
@@ -78,6 +80,17 @@ function shapeBlock() {
       <button type="button" class="primary" data-action="shapePlan"${planning.busy ? ' disabled' : ''}>Plan erstellen</button>
       <button type="button" class="text-button" data-action="shapeClose">Abbrechen</button>
     </section>`;
+}
+
+// Earlier plans: one tap shows the count, a second deletes them. The current plan is never part of it.
+function oldPlansRow() {
+  const count = getHistory().length;
+  if (!count && !shape.deletedOld) return '';
+  if (!count)
+    return `<div class="row" id="oldPlans"><span class="grow muted">Frühere Pläne gelöscht</span></div>`;
+  return `<button type="button" class="row danger-row" data-action="deleteOldPlans" id="oldPlans">
+      <span class="grow"><span class="block">${shape.confirmOld ? 'Wirklich löschen? Nochmal tippen' : `Frühere Pläne löschen (${count})`}</span><span class="muted small">Der aktuelle Plan bleibt, Gegessenes bleibt gezählt</span></span>
+    </button>`;
 }
 
 export const keepShapeWish = (text) => {
@@ -291,6 +304,7 @@ export function planView() {
       <button type="button" class="row danger-row" data-action="discardPlan" id="discardPlan"${planning.busy ? ' disabled' : ''}>
         <span class="grow"><span class="block">${shape.confirmDiscard ? 'Wirklich verwerfen? Nochmal tippen' : 'Plan verwerfen'}</span><span class="muted small">Schon Gegessenes bleibt gezählt</span></span>
       </button>
+      ${oldPlansRow()}
     </div>
     ${fridgeItems()}`;
 }
@@ -366,6 +380,16 @@ export const planActions = {
     const wish = shape.wish.trim();
     Object.assign(shape, { open: false, wish: '' });
     newWeek(wish, options);
+  },
+  deleteOldPlans: () => {
+    if (!shape.confirmOld) {
+      shape.confirmOld = true;
+      rerender();
+      return;
+    }
+    shape.confirmOld = false;
+    shape.deletedOld = deleteOldPlans() > 0;
+    rerender();
   },
   discardPlan: () => {
     if (!shape.confirmDiscard) {

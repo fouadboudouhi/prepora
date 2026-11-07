@@ -2517,3 +2517,45 @@ a {
 #planShape .row {
   min-height: 56px;
 }
+
+/* Vorrat: grams typed straight into the row, the place as a small picker in the add line */
+.pantry-row .entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+.pantry-row .entry input {
+  width: 72px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  text-align: right;
+}
+#pantryAdd,
+#fridgeAdd {
+  margin-top: 12px;
+}
+#pantryAdd .place {
+  flex: 0 0 auto;
+  max-width: 120px;
+  font-size: 14px;
+}
+#fridgeList .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+#fridgeList .chip .glyph {
+  width: 14px;
+  height: 14px;
+  opacity: 0.6;
+}
+#pantryMore {
+  margin-top: 24px;
+}
