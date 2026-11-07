@@ -3,6 +3,7 @@ import {
   bestWeek,
   deleteOldPlans,
   discardPlan,
+  dropDays,
   getHistory,
   getFridge,
   getPlan,
@@ -22,6 +23,7 @@ import {
   MAX_COOK_DAYS,
   MAX_PLAN_DAYS,
   boxCheck,
+  localDay,
   mealName,
   mealNutrition,
   weekdayOf,
@@ -32,7 +34,15 @@ import { dayLabel, errorText, esc, number, rerender } from './ui.js';
 const fridgeState = { busy: false, error: null };
 
 // A new plan of any length: days, cook days and the start are chosen here, the wish is optional.
-const shape = { open: false, days: null, cookDays: null, start: 'next', wish: '', confirmDiscard: false };
+const shape = {
+  open: false,
+  days: null,
+  cookDays: null,
+  start: 'next',
+  wish: '',
+  confirmDiscard: false,
+  confirmDrop: null,
+};
 const START_WORDS = [
   ['today', 'Heute'],
   ['tomorrow', 'Morgen'],
@@ -257,7 +267,13 @@ export function planView() {
       ${days
         .map((date) => {
           const meals = plan.meals.filter((meal) => meal.date === date && !meal.skipped);
-          return `<div class="row stacked"><span>${esc(dayLabel(date))}</span>${meals
+          const canDrop = date >= localDay() && !meals.some((meal) => meal.eaten) && !planning.busy;
+          const asking = shape.confirmDrop === date;
+          return `<div class="row stacked" data-date="${date}"><span class="day-head"><span>${esc(dayLabel(date))}</span>${
+            canDrop
+              ? `<button type="button" class="text-button${asking ? ' danger' : ''}" data-action="dropDay" data-date="${date}">${asking ? 'Wirklich raus?' : 'Entfernen'}<span class="sr">: ${esc(dayLabel(date))}</span></button>`
+              : ''
+          }</span>${meals
             .map(
               (meal) =>
                 `<span class="meal${meal.eaten ? ' done' : ''}"><span class="muted">${esc(meal.meal)}</span><span class="dish">${esc(mealName(plan, meal))}${placeOf(meal)}</span></span>`
@@ -399,6 +415,17 @@ export const planActions = {
     }
     shape.confirmDiscard = false;
     discardPlan();
+    rerender();
+  },
+  dropDay: (el) => {
+    const date = el.dataset.date;
+    if (shape.confirmDrop !== date) {
+      shape.confirmDrop = date;
+      rerender();
+      return;
+    }
+    shape.confirmDrop = null;
+    dropDays([date]);
     rerender();
   },
   repeatWeek: () => repeatBestWeek(),

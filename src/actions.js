@@ -21,6 +21,7 @@ import {
   repeatPlan,
   shopDate,
   shoppingCost,
+  shoppingList,
   skipMeal,
 } from './planner.js';
 import { planAlarms, setAlarms, syncBlocks } from './push.js';
@@ -89,12 +90,22 @@ export function changePantry(changes = [], today = localDay()) {
     else list.push(entry);
   }
   savePantry(list);
+  // Until the shop is really done, what is at home is what the list takes off. A plan that was taken as bought
+  // too early opens again.
   const plan = getPlan();
-  if (plan && !plan.settled && (plan.shopOn ?? plan.start) >= today) {
-    const next = { ...plan, pantry: list };
+  if (plan && (!plan.settled || !shopDone(plan))) {
+    const { settled, ...rest } = plan;
+    const next = { ...rest, pantry: list };
     savePlan({ ...next, cost: shoppingCost(next) });
   }
   return list;
+}
+
+// Everything on the list in the cart. Before that, nothing is taken as bought.
+export function shopDone(plan) {
+  const checked = read('shop', {});
+  const items = shoppingList(plan).flatMap((group) => group.items);
+  return items.every((item) => checked[item.id]);
 }
 
 // Older plans go. What was eaten from them stays in the day's numbers, as plain entries.
@@ -126,9 +137,11 @@ export function deleteOldPlans(today = localDay()) {
 }
 
 // Once the shop day of the plan has come, its packs are bought: what they leave over is at home from now on.
-export function settleShopping(today = localDay()) {
+// Bought means: everything ticked off, or cooking has begun. The shop day alone says nothing.
+export function settleShopping(today = localDay(), { cooking = false } = {}) {
   const plan = getPlan();
   if (!plan || plan.settled || !plan.shopOn || plan.shopOn > today) return false;
+  if (!cooking && !shopDone(plan)) return false;
   savePantry(carryOver(plan, today));
   savePlan({ ...plan, settled: true });
   return true;
@@ -323,6 +336,117 @@ export function discardPlan() {
   syncBlocks(getProfile(), null);
   write('shop', {});
   return true;
+}
+
+// Single days come out of the plan, the rest stays. What is not cooked yet gets smaller, so the list does too;
+// boxes already cooked go to the freezer, if they keep there. Bought food that is no longer needed stays at home.
+export function dropDays(dates = [], today = localDay()) {
+  const plan = getPlan();
+  if (!plan) return { error: 'Es gibt gerade keinen Plan.' };
+  const wanted = new Set(dates.filter((date) => typeof date === 'string' && date >= today));
+  const gone = plan.meals.filter((meal) => wanted.has(meal.date) && !meal.eaten);
+  if (!gone.length) return { error: 'An diesen Tagen ist nichts mehr offen, das sich entfernen lässt.' };
+  const profile = getProfile();
+  const people = plan.people ?? 1;
+  const cooked = (recipe) => plan.cookDays.some((day) => day.date === recipe.cookDate && day.done);
+  const freed = [];
+  const stock = getStock();
+  const toFreezer = [];
+  const thrown = [];
+  const recipes = [];
+  for (const recipe of plan.recipes) {
+    const out = gone.filter((meal) => meal.recipeId === recipe.id && !meal.stock).length * people;
+    if (!out) {
+      recipes.push(recipe);
+      continue;
+    }
+    if (cooked(recipe)) {
+      const fridgeBoxes =
+        gone.filter((meal) => meal.recipeId === recipe.id && !meal.stock && meal.storage !== 'freezer')
+          .length * people;
+      if (fridgeBoxes && recipe.freezes && profile.freezer !== false) {
+        const found = stock.find((item) => item.recipeId === recipe.id && item.frozenAt === today);
+        if (found) found.portions += fridgeBoxes;
+        else
+          stock.push({
+            id: `s-${today}-${recipe.id}`,
+            recipeId: recipe.id,
+            name: recipe.name,
+            portions: fridgeBoxes,
+            frozenAt: today,
+            nutrition: recipe.nutrition,
+          });
+        toFreezer.push(recipe.name);
+      } else if (fridgeBoxes) thrown.push(recipe.name);
+      recipes.push({ ...recipe, portions: recipe.portions - out });
+      continue;
+    }
+    const left = Math.max(0, recipe.portions - out);
+    const share = recipe.portions ? left / recipe.portions : 0;
+    const ingredients = recipe.ingredients.map((item) => {
+      const grams = Math.round(((item.grams || 0) * share) / 5) * 5;
+      freed.push({ ...item, grams: (item.grams || 0) - grams });
+      return { ...item, grams };
+    });
+    if (left) recipes.push({ ...recipe, ingredients, portions: left });
+  }
+  const days = Math.max(1, plan.days ?? new Set(plan.meals.map((meal) => meal.date)).size);
+  const keepShare = Math.max(0, days - wanted.size) / days;
+  const fillers = (plan.fillers ?? []).map((filler) => {
+    const ingredients = (filler.ingredients ?? []).map((item) => {
+      const grams = Math.round(((item.grams || 0) * keepShare) / 5) * 5;
+      freed.push({ ...item, grams: (item.grams || 0) - grams });
+      return { ...item, grams };
+    });
+    return { ...filler, ingredients, servings: Math.max(1, Math.round(filler.servings * keepShare)) };
+  });
+  const kept = new Set(recipes.map((recipe) => recipe.id));
+  const meals = plan.meals.filter((meal) => !gone.includes(meal));
+  const next = {
+    ...plan,
+    days: Math.max(1, days - wanted.size),
+    recipes,
+    fillers,
+    meals,
+    cookDays: plan.cookDays.filter(
+      (day) =>
+        day.done ||
+        recipes.some((recipe) => recipe.cookDate === day.date) ||
+        !plan.recipes.some((recipe) => recipe.cookDate === day.date)
+    ),
+  };
+  next.cost = shoppingCost(next);
+  // Already bought: the raw food is at home now and goes into a later plan.
+  if (plan.settled) {
+    const list = getPantry(today);
+    for (const item of freed) {
+      if (!item.food || item.food === 'gewuerze' || item.grams < 30 || !(item.food in FOODS)) continue;
+      const found = list.find((entry) => entry.id === item.food);
+      if (found) found.grams += item.grams;
+      else
+        list.push({
+          id: item.food,
+          name: item.name,
+          grams: item.grams,
+          category: item.category ?? 'Vorrat',
+          since: today,
+        });
+    }
+    savePantry(list);
+  }
+  saveStock(stock);
+  savePlan(next);
+  setAlarms(
+    planAlarms(next, (meal) => mealName(next, meal)),
+    gone.map((meal) => `thaw-${meal.id}`)
+  );
+  syncBlocks(profile, next);
+  return {
+    removed: [...wanted].sort(),
+    gone: plan.recipes.filter((recipe) => !kept.has(recipe.id)).map((recipe) => recipe.name),
+    toFreezer,
+    eatSoon: thrown,
+  };
 }
 
 // The rest of the plan is meant to stay, so Claude gets it along and only changes this one dish.

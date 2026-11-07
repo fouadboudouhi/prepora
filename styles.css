@@ -444,6 +444,21 @@ h2.section {
   align-items: flex-start;
   gap: 2px;
 }
+.row.stacked .day-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.row.stacked .day-head .text-button {
+  margin: 0;
+  padding: 4px 0;
+  font-size: 14px;
+}
+.row.stacked .day-head .text-button.danger {
+  color: var(--danger, #ff453a);
+}
 .row.stacked .muted {
   text-align: left;
   font-size: 13px;
