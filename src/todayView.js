@@ -71,16 +71,22 @@ function statusBlock(plan, today, targets, profile) {
       ? `Mit den Boxen noch offen: ${[openKcal > 0 ? `ca. ${number(openKcal)} kcal` : '', openProtein > 0 ? `${number(openProtein)} g Eiweiß` : ''].filter(Boolean).join(', ')}`
       : '';
   const week = weekIntake(today, allPlans(), getAllExtras());
+  const figure = (key, unit, goal, label) => `
+    <span class="figure">
+      <span class="amount-line"><strong data-count="${key}">${number(sum(key))}</strong>${unit ? ` ${unit}` : ''}</span>
+      <span class="muted">von ${number(goal)}${label}</span>
+      ${bar(sum(key), goal)}
+    </span>`;
   return `
     <section class="status">
-      <button type="button" class="day-line" data-tab="week" id="weekRow">
-        <span><strong>${number(sum('kcal'))}</strong> <span class="muted">von ${number(targets.kcal)} kcal</span>${bar(sum('kcal'), targets.kcal)}</span>
-        <span><strong>${number(sum('protein'))} g</strong> <span class="muted">von ${number(targets.protein)} g Eiweiß</span>${bar(sum('protein'), targets.protein)}</span>
+      <button type="button" class="goal-link" data-tab="profile" id="todayTargets"><span>${esc(GOALS[profile.goal].label)}</span><span class="sr">: ${esc(targetText(targets))}</span></button>
+      <button type="button" class="day-line" data-tab="week" id="weekRow" aria-label="Deine Woche öffnen">
+        ${figure('kcal', '', targets.kcal, ' kcal')}
+        ${figure('protein', 'g', targets.protein, ' g Eiweiß')}
         <span class="macros" id="macros">Fett ${number(sum('fat'))} g · Kohlenhydrate ${number(sum('carbs'))} g</span>
         ${gap ? `<span class="gap" id="gap">${esc(gap)}</span>` : ''}
-        <span class="week-link">Deine Woche${week.average ? `, Schnitt ca. ${number(Math.round(week.average.kcal / 10) * 10)} kcal` : ''}</span>
+        <span class="week-link">Deine Woche${week.average ? `<span class="muted">Schnitt ca. ${number(Math.round(week.average.kcal / 10) * 10)} kcal</span>` : ''}</span>
       </button>
-      <button type="button" class="goal-link" data-tab="profile" id="todayTargets">${esc(GOALS[profile.goal].label)}: ${esc(targetText(targets))}</button>
     </section>`;
 }
 
@@ -95,7 +101,7 @@ const AMOUNTS = [
 ];
 
 const entryRow = (entry) => `
-  <div class="row eaten">
+  <div class="row eaten" data-key="${esc(entry.id ?? entry.name)}">
     <span class="grow"><span class="block">${esc(entry.name)}</span><span class="muted small">ca. ${number(entry.kcal)} kcal, ${number(entry.protein)} g Eiweiß${entry.estimated ? ', geschätzt' : ''}</span></span>
     ${
       entry.kind === 'extra'
@@ -119,11 +125,11 @@ function suggestions(plan, today) {
   const chips = [
     ...snacks.map(
       (filler) =>
-        `<button type="button" class="chip snack" data-action="eatFiller" data-id="${esc(filler.id)}" aria-label="${esc(filler.name)} gegessen">+ ${esc(filler.name)}</button>`
+        `<button type="button" class="chip snack" data-action="eatFiller" data-id="${esc(filler.id)}" aria-label="${esc(filler.name)} gegessen"><span class="plus" aria-hidden="true">+</span>${esc(filler.name)}</button>`
     ),
     ...recent.map(
       (entry) =>
-        `<button type="button" class="chip" data-action="logAgain" data-name="${esc(entry.name)}">+ ${esc(entry.name)}</button>`
+        `<button type="button" class="chip" data-action="logAgain" data-name="${esc(entry.name)}"><span class="plus" aria-hidden="true">+</span>${esc(entry.name)}</button>`
     ),
   ].slice(0, 6);
   return chips.length
@@ -136,11 +142,13 @@ function logBlock(plan, today) {
   return `
     <section id="foodLog">
       <h2 class="section">Gegessen</h2>
-      <form id="foodLogForm" class="composer" novalidate>
-        <textarea name="food" rows="1" maxlength="400" enterkeyhint="done" aria-label="Was hast du gegessen?" placeholder="Was hast du gegessen?"${log.busy ? ' disabled' : ''}>${esc(log.draft)}</textarea>
-        <button type="button" class="tool" data-tab="scan" id="scanButton" aria-label="Barcode scannen">${icon('barcode')}</button>
-        <label class="tool" id="dishPhotoLabel"><span class="sr">Essen fotografieren</span>${icon('camera')}<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>
-        <button type="submit" class="send" aria-label="Eintragen"${log.busy ? ' disabled' : ''}>${icon('up')}</button>
+      <form id="foodLogForm" class="composer field" novalidate>
+        <textarea name="food" rows="2" maxlength="400" enterkeyhint="done" aria-label="Was hast du gegessen?" placeholder="Was hast du gegessen?"${log.busy ? ' disabled' : ''}>${esc(log.draft)}</textarea>
+        <div class="field-bar">
+          <button type="button" class="tool" data-tab="scan" id="scanButton" aria-label="Barcode scannen">${icon('barcode')}</button>
+          <label class="tool" id="dishPhotoLabel"><span class="sr">Essen fotografieren</span>${icon('camera')}<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>
+          <button type="submit" class="send" aria-label="Eintragen"${log.busy ? ' disabled' : ''}>${icon('up')}</button>
+        </div>
       </form>
       ${log.busy ? '<p class="note" role="status">Claude rechnet …</p>' : ''}
       ${log.error ? `<p class="note error" role="alert">${esc(errorText(log.error))}</p>` : ''}

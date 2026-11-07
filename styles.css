@@ -2025,3 +2025,373 @@ h2.section,
   margin: 0;
   color: var(--muted);
 }
+
+/* ------------------------------------------------------------------------------------------------------------------
+   Calm and motion: fewer lines on Heute, a roomy entry field, a small title that appears when the large one scrolls
+   away, and movement like the iPhone's own. Every animation sits behind prefers-reduced-motion.
+   ------------------------------------------------------------------------------------------------------------------ */
+:root {
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.page h1 {
+  font-size: 34px;
+  letter-spacing: -0.03em;
+}
+
+/* The small title on top */
+.topbar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  height: calc(44px + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  border-bottom: 0.5px solid transparent;
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    border-color 0.2s ease;
+  view-transition-name: topbar;
+}
+html.scrolled .topbar {
+  border-bottom-color: var(--line);
+  opacity: 1;
+}
+.tabs {
+  view-transition-name: tabbar;
+}
+
+/* Heute: two big figures, one quiet line, the week as a plain link */
+.status {
+  margin-top: 24px;
+}
+.status .goal-link {
+  min-height: 0;
+  margin: 0 0 8px;
+  padding: 0 16px;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+.status .day-line {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 20px;
+  padding: 20px;
+  border-radius: 22px;
+  transition: transform 0.25s var(--spring);
+}
+.status .day-line > .figure {
+  display: grid;
+  gap: 2px;
+}
+.figure .amount-line {
+  font-size: 15px;
+  font-weight: 600;
+}
+.status .day-line .figure strong {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+.figure .muted {
+  font-size: 13px;
+}
+.figure .bar {
+  margin-top: 10px;
+}
+.status .day-line .macros {
+  margin: 0;
+}
+.status .day-line .gap {
+  margin-top: -10px;
+  color: var(--muted);
+}
+.status .day-line .week-link {
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--line);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+.status .day-line .week-link .muted {
+  margin-left: auto;
+  font-weight: 500;
+}
+.status .day-line .week-link::after {
+  opacity: 0.4;
+}
+.status .day-line:active {
+  transform: scale(0.98);
+}
+
+/* The entry field: room for a whole sentence, the tools in a row under it */
+.composer.field {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 14px 10px 10px 16px;
+  border-radius: 22px;
+  outline: 0;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow 0.2s ease;
+}
+.composer.field:focus-within {
+  outline: 0;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.composer.field textarea {
+  min-height: 52px;
+  max-height: 160px;
+  padding: 0 6px 0 0;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.field-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -8px;
+}
+.field-bar .send {
+  margin-left: auto;
+  width: 34px;
+  height: 34px;
+  transition:
+    transform 0.2s var(--spring),
+    opacity 0.2s ease;
+}
+.composer.field:not(:focus-within) .send {
+  opacity: 0.85;
+}
+.field-bar .send:active {
+  transform: scale(0.88);
+}
+
+/* The chat field: a little taller, same soft focus ring */
+#chatForm.composer {
+  min-height: 48px;
+  padding: 6px 6px 6px 18px;
+  border-radius: 26px;
+  outline: 0;
+  transition: box-shadow 0.2s ease;
+}
+#chatForm.composer:focus-within {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+#chatForm textarea {
+  padding: 9px 0;
+  font-size: 17px;
+}
+
+/* Suggestions: one line that scrolls sideways, quiet grey with an orange plus */
+.pills.recent {
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin: 12px -16px 0;
+  padding: 0 16px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.pills.recent::-webkit-scrollbar {
+  display: none;
+}
+.pills.recent .chip,
+.pills.recent .chip.snack {
+  flex: none;
+  gap: 6px;
+  min-height: 36px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.chip .plus {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+/* Buttons give a little under the finger and spring back */
+.primary,
+.secondary,
+.chip,
+.round,
+.send,
+.tool,
+button.row,
+.hero {
+  transition: transform 0.25s var(--spring);
+}
+.primary:active,
+.secondary:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Between screens: deeper ones slide in from the right, back slides out, tabs fade, the chat rises */
+  ::view-transition-group(*) {
+    animation-duration: 0.45s;
+    animation-timing-function: var(--spring);
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.45s;
+    animation-timing-function: var(--spring);
+  }
+  html[data-nav='push']::view-transition-new(root) {
+    animation-name: page-in;
+  }
+  html[data-nav='push']::view-transition-old(root) {
+    animation-name: page-under;
+  }
+  html[data-nav='pop']::view-transition-old(root) {
+    z-index: 1;
+    animation-name: page-out;
+  }
+  html[data-nav='pop']::view-transition-new(root) {
+    animation-name: page-back;
+  }
+  html[data-nav='tab']::view-transition-old(root) {
+    animation: fade-away 0.16s ease both;
+  }
+  html[data-nav='tab']::view-transition-new(root) {
+    animation: none;
+  }
+  html[data-nav='sheet']::view-transition-new(root) {
+    animation: sheet-up 0.5s var(--spring) both;
+  }
+  html[data-nav='sheet']::view-transition-old(root) {
+    animation: page-dim 0.5s var(--spring) both;
+  }
+  html[data-nav='close']::view-transition-old(root) {
+    z-index: 1;
+    animation: sheet-down 0.42s var(--spring) both;
+  }
+  html[data-nav='close']::view-transition-new(root) {
+    animation: page-back 0.42s var(--spring) both;
+  }
+  html[data-nav='sheet']::view-transition-old(tabbar),
+  html[data-nav='close']::view-transition-new(tabbar) {
+    animation: fade-away 0.3s ease both;
+  }
+  html[data-nav='close']::view-transition-new(tabbar) {
+    animation-direction: reverse;
+  }
+
+  /* After a tab change the parts of the page rise in one after the other */
+  .arrive[data-arrive='tab'] .page > * {
+    animation: rise 0.55s var(--ease-out) both;
+  }
+  .arrive[data-arrive='tab'] .page > :nth-child(2) {
+    animation-delay: 0.03s;
+  }
+  .arrive[data-arrive='tab'] .page > :nth-child(3) {
+    animation-delay: 0.06s;
+  }
+  .arrive[data-arrive='tab'] .page > :nth-child(4) {
+    animation-delay: 0.09s;
+  }
+  .arrive[data-arrive='tab'] .page > :nth-child(5) {
+    animation-delay: 0.12s;
+  }
+  .arrive[data-arrive='tab'] .page > :nth-child(n + 6) {
+    animation-delay: 0.15s;
+  }
+  .arrive[data-arrive='tab'] .tabs [aria-current='page'] .glyph {
+    animation: tap-pop 0.45s var(--spring);
+  }
+
+  /* Progress bars fill up when a screen opens */
+  .arrive .bar > span {
+    animation: fill 0.9s 0.1s var(--ease-out) both;
+  }
+  .bar > span {
+    transition: width 0.6s var(--ease-out);
+  }
+
+  /* A new entry slides into its list */
+  .fresh {
+    animation: fresh-in 0.5s var(--spring) both;
+  }
+}
+
+@keyframes page-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes page-under {
+  to {
+    transform: translateX(-25%);
+    filter: brightness(0.9);
+  }
+}
+@keyframes page-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes page-back {
+  from {
+    transform: translateX(-25%);
+    filter: brightness(0.9);
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-down {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes page-dim {
+  to {
+    transform: scale(0.96);
+    filter: brightness(0.8);
+  }
+}
+@keyframes fade-away {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@keyframes fill {
+  from {
+    width: 0;
+  }
+}
+@keyframes tap-pop {
+  40% {
+    transform: scale(0.82);
+  }
+  75% {
+    transform: scale(1.08);
+  }
+}
+@keyframes fresh-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
