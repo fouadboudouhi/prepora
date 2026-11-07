@@ -17,6 +17,7 @@ import {
   getTaste,
   newWeek,
   discardPlan,
+  dropDays,
   planning,
   repeatBestWeek,
   replaceRecipe,
@@ -126,6 +127,19 @@ export const TOOLS = [
     description:
       'Verwirft den aktuellen Plan ohne neuen. Schon Gegessenes bleibt gezählt, Erinnerungen und Einkaufshaken fallen weg. Für "verwerfen und neu machen" reicht create_plan allein.',
     input_schema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
+    name: 'remove_days',
+    description:
+      'Nimmt einzelne Tage aus dem aktuellen Plan, der Rest bleibt. Daten als JJJJ-MM-TT, nur heute oder später. Noch nicht Gekochtes wird kleiner, Einkaufsliste und Kosten passen sich an. Schon gekochte Boxen kommen in den Tiefkühler, wenn das Gericht das verträgt (toFreezer), sonst bald essen (eatSoon). Schon Gekauftes, das nicht mehr gebraucht wird, landet im Vorrat.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['dates'],
+      properties: {
+        dates: { type: 'array', minItems: 1, maxItems: 14, items: { type: 'string', maxLength: 10 } },
+      },
+    },
   },
   {
     name: 'replace_dish',
@@ -280,6 +294,7 @@ export const TOOL_STATUS = {
   get_shopping_list: 'Schaut in die Einkaufsliste …',
   create_plan: 'Erstellt den Plan, das dauert ein bis zwei Minuten …',
   discard_plan: 'Verwirft den Plan …',
+  remove_days: 'Nimmt die Tage raus …',
   replace_dish: 'Tauscht das Gericht …',
   repeat_best_week: 'Wiederholt die beste Woche …',
   update_profile: 'Ändert das Profil …',
@@ -533,6 +548,10 @@ export async function runTool(name, input = {}) {
       );
     case 'discard_plan':
       return discardPlan() ? { ok: true, plan: null } : { error: 'Es gibt gerade keinen Plan.' };
+    case 'remove_days': {
+      const result = dropDays(input.dates);
+      return result.error ? result : { done: true, ...result, plan: planSummary(getPlan()) };
+    }
     case 'replace_dish':
       if (!recipeOf(getPlan(), input.recipeId))
         return { error: 'Dieses Rezept gibt es im aktuellen Plan nicht.' };

@@ -865,6 +865,62 @@ test('what is at home can be corrected, and earlier plans deleted while the curr
   await context.close();
 });
 
+test('a shop day that passed without shopping still follows the pantry, and single days come out of the plan', async () => {
+  const { context, page } = await open({ storage: ready });
+  await page.click('nav [data-tab="plan"]');
+  await page.click('[data-action="newWeek"]');
+  await page.waitForSelector('#weekList');
+  const food = await page.evaluate(() => {
+    const plan = JSON.parse(localStorage.getItem('prepora-plan'));
+    const item = plan.recipes
+      .flatMap((recipe) => recipe.ingredients)
+      .find((entry) => entry.food && entry.food !== 'gewuerze');
+    const yesterday = new Date(Date.now() - 864e5).toLocaleDateString('sv');
+    const home = [{ id: item.food, name: item.name, grams: 200, category: 'Vorrat', since: yesterday }];
+    localStorage.setItem('prepora-pantry', JSON.stringify(home));
+    localStorage.setItem(
+      'prepora-plan',
+      JSON.stringify({ ...plan, shopOn: yesterday, pantry: home, settled: true })
+    );
+    return item.food;
+  });
+  await page.click('nav [data-tab="more"]');
+  await page.click('#openPantry');
+  await page.click('[data-action="pantryRemove"]');
+  const plan = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')));
+  assert.equal(plan.settled, undefined);
+  assert.equal(
+    plan.pantry.some((entry) => entry.id === food),
+    false
+  );
+
+  // Unticked, the shop is not taken as done, so a restart does not settle it again.
+  await page.reload();
+  await page.waitForSelector('nav');
+  assert.equal(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')).settled),
+    undefined
+  );
+
+  await page.click('nav [data-tab="plan"]');
+  const before = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')));
+  const last = before.meals.at(-1).date;
+  await page.click(`[data-action="dropDay"][data-date="${last}"]`);
+  assert.match(await page.locator(`[data-action="dropDay"][data-date="${last}"]`).innerText(), /Wirklich/);
+  await page.click(`[data-action="dropDay"][data-date="${last}"]`);
+  const after = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')));
+  assert.equal(
+    after.meals.some((meal) => meal.date === last),
+    false
+  );
+  assert.equal(after.days, before.days - 1);
+  const grams = (p) =>
+    p.recipes.flatMap((recipe) => recipe.ingredients).reduce((sum, item) => sum + (item.grams || 0), 0);
+  assert.ok(grams(after) < grams(before));
+  assert.ok(after.cost <= before.cost);
+  await context.close();
+});
+
 test('a failed plan says why and keeps the screen usable', async () => {
   const { context, page } = await open({ storage: ready, claude: 402 });
   await page.click('[data-tab="plan"]');

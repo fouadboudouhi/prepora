@@ -137,7 +137,7 @@ function labelsView(plan, current) {
 
 // Fresh food the packs left over would spoil before the next plan. Frozen raw, it keeps and the next plan uses it.
 function leftoverBlock() {
-  settleShopping();
+  settleShopping(undefined, { cooking: true });
   const fresh = getPantry().filter(isPerishable);
   if (!fresh.length) return '';
   return `
