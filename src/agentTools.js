@@ -6,6 +6,10 @@ import {
   getAllExtras,
   getFridge,
   getHistory,
+  getPantry,
+  changePantry,
+  deleteOldPlans,
+  PANTRY_PLACES,
   getMyRecipes,
   getPlan,
   getStock,
@@ -187,6 +191,38 @@ export const TOOLS = [
     },
   },
   {
+    name: 'update_pantry',
+    description:
+      'Korrigiert den Vorrat zu Hause (atHome in get_overview): was die Person da hat, in Gramm. Jede Änderung nennt name und grams; grams 0 nimmt es heraus. Neues kommt dazu. place ist optional: Vorrat (Schrank), Kühlregal, Gemüse und Obst, Fleisch und Fisch oder Tiefkühl (rohe Ware, keine fertigen Gerichte). Einkaufsliste und nächster Plan richten sich danach. Stück schätzt du in Gramm, z. B. ein Ei 60 g.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['changes'],
+      properties: {
+        changes: {
+          type: 'array',
+          maxItems: 40,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['name', 'grams'],
+            properties: {
+              name: { type: 'string', maxLength: 80 },
+              grams: { type: 'number', minimum: 0, maximum: 50000 },
+              place: { type: 'string', enum: PANTRY_PLACES },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: 'delete_old_plans',
+    description:
+      'Löscht alle früheren Pläne. Der aktuelle Plan bleibt. Was aus ihnen gegessen wurde, bleibt in den Tageswerten. Danach geht "Beste Woche wiederholen" erst wieder mit neuen Bewertungen.',
+    input_schema: { type: 'object', additionalProperties: false, properties: {} },
+  },
+  {
     name: 'update_freezer',
     description:
       'Ändert die Portionen eines Gerichts im Tiefkühler. portions ist die neue Zahl, 0 nimmt es heraus.',
@@ -249,6 +285,8 @@ export const TOOL_STATUS = {
   update_profile: 'Ändert das Profil …',
   update_taste: 'Merkt sich das …',
   set_fridge: 'Trägt den Kühlschrank ein …',
+  update_pantry: 'Korrigiert deinen Vorrat …',
+  delete_old_plans: 'Löscht frühere Pläne …',
   update_freezer: 'Ändert den Tiefkühler …',
   mark_meal: 'Hakt die Mahlzeit ab …',
   log_food: 'Trägt das Essen ein …',
@@ -319,6 +357,8 @@ function overview() {
     plan: planSummary(getPlan()),
     freezer: getStock().map(({ name, portions, frozenAt }) => ({ name, portions, frozenAt })),
     fridge: getFridge(),
+    atHome: getPantry().map(({ name, grams, category, since }) => ({ name, grams, place: category, since })),
+    earlierPlans: getHistory().length,
     taste: getTaste(),
     ownRecipes: getMyRecipes().map(({ name, wanted }) => ({ name, ...(wanted ? { nextPlan: true } : {}) })),
     supplements: (getSupplements().mine ?? []).map(({ name, dose }) => ({ name, dose })),
@@ -520,6 +560,24 @@ export async function runTool(name, input = {}) {
       return { done: true };
     case 'update_freezer':
       return updateFreezer(input);
+    case 'update_pantry': {
+      if (!Array.isArray(input.changes)) return { error: 'changes braucht eine Liste.' };
+      const bad = input.changes.find(
+        (change) => typeof change?.name !== 'string' || !change.name.trim() || !(Number(change.grams) >= 0)
+      );
+      if (bad) return { error: `Ungültige Änderung: ${JSON.stringify(bad)}` };
+      const list = changePantry(
+        input.changes
+          .slice(0, 40)
+          .map((change) => ({ name: change.name, grams: change.grams, category: change.place }))
+      );
+      return {
+        done: true,
+        atHome: list.map(({ name, grams, category }) => ({ name, grams, place: category })),
+      };
+    }
+    case 'delete_old_plans':
+      return { done: true, deleted: deleteOldPlans() };
     case 'mark_meal':
       return markMeal(input);
     case 'log_food':
@@ -532,12 +590,14 @@ export async function runTool(name, input = {}) {
 }
 
 // What a turn changed, so one tap can take it back. Kept while the app is open.
-export const KEYS = ['profile', 'plan', 'history', 'shop', 'stock', 'taste', 'fridge', 'extras'];
+export const KEYS = ['profile', 'plan', 'history', 'shop', 'stock', 'taste', 'fridge', 'extras', 'pantry'];
 export const snapshot = () => Object.fromEntries(KEYS.map((key) => [key, JSON.stringify(read(key, null))]));
 
 const NAMES = {
   profile: 'Profil',
-  plan: 'Wochenplan',
+  plan: 'Plan',
+  history: 'Frühere Pläne',
+  pantry: 'Vorrat',
   taste: 'Geschmack',
   fridge: 'Kühlschrank',
   stock: 'Tiefkühler',

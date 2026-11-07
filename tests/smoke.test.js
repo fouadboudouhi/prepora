@@ -817,6 +817,54 @@ test('a plan can have any length, start today and be thrown away again', async (
   await context.close();
 });
 
+test('what is at home can be corrected, and earlier plans deleted while the current one stays', async () => {
+  const { context, page } = await open({ storage: ready });
+  await page.click('[data-tab="more"]');
+  await page.click('#openPantry');
+  await page.fill('#pantryAdd [name="name"]', 'Hähnchenbrust');
+  await page.fill('#pantryAdd [name="grams"]', '400');
+  await page.click('#pantryAdd .send');
+  await page.waitForSelector('#pantryList');
+  let pantry = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-pantry')));
+  assert.equal(pantry[0].id, 'haehnchenbrust');
+  assert.equal(pantry[0].grams, 400);
+  await page.fill('[name="pantryGrams"]', '250');
+  await page.locator('[name="pantryGrams"]').dispatchEvent('change');
+  pantry = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-pantry')));
+  assert.equal(pantry[0].grams, 250);
+  await page.click('[data-action="pantryRemove"]');
+  pantry = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-pantry')));
+  assert.equal(pantry.length, 0);
+  await page.fill('#fridgeAdd [name="item"]', 'halbe Paprika');
+  await page.click('#fridgeAdd .send');
+  assert.match(await page.locator('#fridgeList').innerText(), /halbe Paprika/);
+
+  await page.click('nav [data-tab="plan"]');
+  await page.click('[data-action="newWeek"]');
+  await page.waitForSelector('#weekList');
+  const current = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')).id);
+  await page.evaluate(() => {
+    const plan = JSON.parse(localStorage.getItem('prepora-plan'));
+    const old = { ...plan, id: 'old', meals: plan.meals.map((meal) => ({ ...meal, eaten: '2026-11-01' })) };
+    localStorage.setItem('prepora-history', JSON.stringify([old]));
+  });
+  await page.click('nav [data-tab="today"]');
+  await page.click('nav [data-tab="plan"]');
+  await page.click('#oldPlans');
+  await page.click('#oldPlans');
+  const after = await page.evaluate(() => ({
+    plan: JSON.parse(localStorage.getItem('prepora-plan')).id,
+    history: JSON.parse(localStorage.getItem('prepora-history')),
+    kept: (JSON.parse(localStorage.getItem('prepora-extras'))['2026-11-01'] ?? []).filter(
+      (entry) => entry.box
+    ).length,
+  }));
+  assert.equal(after.plan, current);
+  assert.deepEqual(after.history, []);
+  assert.ok(after.kept > 0);
+  await context.close();
+});
+
 test('a failed plan says why and keeps the screen usable', async () => {
   const { context, page } = await open({ storage: ready, claude: 402 });
   await page.click('[data-tab="plan"]');
@@ -1201,7 +1249,7 @@ test('Claude in the chat changes the profile and makes the plan, and one tap tak
   const answer = await page.locator('.bubble').last().innerText();
   assert.match(answer, /Mache ich[\s\S]*Fertig: neuer Plan/);
   assert.equal(await page.locator('.bubble li').count(), 2);
-  assert.match(await page.locator('.chat-change').innerText(), /Geändert: Profil, Wochenplan/);
+  assert.match(await page.locator('.chat-change').innerText(), /Geändert: Profil, Plan/);
   const stored = () =>
     page.evaluate(() => ({
       profile: JSON.parse(localStorage.getItem('prepora-profile')),

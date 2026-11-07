@@ -1,6 +1,7 @@
 // What happens to the week: planning it, eating from it, and everything the app remembers on the way.
 import { askClaudeJson } from './ai.js';
 import { getProfile, saveProfile } from './profile.js';
+import { FOODS } from './foods.js';
 import {
   PLAN_SCHEMA,
   PLAN_SYSTEM,
@@ -13,11 +14,13 @@ import {
   finishPlan,
   localDay,
   mealName,
+  mealNutrition,
   nextStart,
   placeStock,
   planRequest,
   repeatPlan,
   shopDate,
+  shoppingCost,
   skipMeal,
 } from './planner.js';
 import { planAlarms, setAlarms, syncBlocks } from './push.js';
@@ -42,6 +45,85 @@ export const saveTaste = (taste) => write('taste', taste);
 export const getPantry = (today = localDay()) =>
   read('pantry', []).filter((entry) => stillGood(entry, today));
 export const savePantry = (list) => write('pantry', list);
+
+// A word as the food table spells it: "Hähnchenbrust" finds haehnchenbrust, so the shop list can take it off.
+const foodKey = (name) =>
+  name
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+export const PANTRY_PLACES = ['Vorrat', 'Kühlregal', 'Gemüse und Obst', 'Fleisch und Fisch', 'Tiefkühl'];
+
+// The person corrects what is at home. A plan whose shop is still ahead takes the change at once, so its list fits.
+export function changePantry(changes = [], today = localDay()) {
+  const list = getPantry(today);
+  for (const change of changes) {
+    const name = String(change.name ?? '')
+      .trim()
+      .slice(0, 80);
+    if (!name) continue;
+    const key = foodKey(name);
+    const id = key in FOODS ? key : name.toLowerCase();
+    const index = list.findIndex(
+      (entry) => entry.id === id || entry.id === change.id || entry.name.toLowerCase() === name.toLowerCase()
+    );
+    const grams = Math.round(Number(change.grams));
+    if (!Number.isFinite(grams) || grams <= 0) {
+      if (index >= 0) list.splice(index, 1);
+      continue;
+    }
+    const before = index >= 0 ? list[index] : null;
+    const place = PANTRY_PLACES.includes(change.category) ? change.category : (before?.category ?? 'Vorrat');
+    const entry = {
+      id: before?.id ?? id,
+      name: before && !change.rename ? before.name : name,
+      grams: Math.min(grams, 50000),
+      category: place,
+      since: before && place === before.category ? before.since : today,
+    };
+    if (index >= 0) list[index] = entry;
+    else list.push(entry);
+  }
+  savePantry(list);
+  const plan = getPlan();
+  if (plan && !plan.settled && (plan.shopOn ?? plan.start) >= today) {
+    const next = { ...plan, pantry: list };
+    savePlan({ ...next, cost: shoppingCost(next) });
+  }
+  return list;
+}
+
+// Older plans go. What was eaten from them stays in the day's numbers, as plain entries.
+export function deleteOldPlans(today = localDay()) {
+  const old = getHistory();
+  if (!old.length) return 0;
+  const extras = getAllExtras();
+  for (const plan of old)
+    for (const meal of plan.meals ?? []) {
+      const date = meal.eaten || (!meal.skipped && !meal.missed && meal.date < today ? meal.date : null);
+      if (!date || date < localDay(new Date(Date.now() - EXTRA_DAYS * DAY))) continue;
+      const nutrition = mealNutrition(plan, meal) ?? {};
+      extras[date] = [
+        ...(extras[date] ?? []),
+        {
+          id: `b-${plan.id}-${meal.id}`,
+          name: `${meal.meal}: ${mealName(plan, meal)}`,
+          kcal: Math.round(nutrition.kcal ?? 0),
+          protein: Math.round(nutrition.protein ?? 0),
+          fat: Math.round(nutrition.fat ?? 0),
+          carbs: Math.round(nutrition.carbs ?? 0),
+          box: true,
+        },
+      ];
+    }
+  write('extras', extras);
+  write('history', []);
+  return old.length;
+}
 
 // Once the shop day of the plan has come, its packs are bought: what they leave over is at home from now on.
 export function settleShopping(today = localDay()) {

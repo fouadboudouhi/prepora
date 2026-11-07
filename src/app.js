@@ -1,5 +1,5 @@
 // The shell: sign-in with the Volumora account, four tabs, and the full-screen cook day above them.
-import { applyTrend, getPlan, getStock, settleShopping, updateBlocks } from './actions.js';
+import { applyTrend, getPantry, getPlan, getStock, settleShopping, updateBlocks } from './actions.js';
 import { chatActions, drawChat, keepDraft, send, watchKeyboard } from './chatView.js';
 import { askHelper, cookActions, cookView, cooking, startTicking } from './cookView.js';
 import { keepShapeWish, planActions, planView, readFridgePhoto } from './planView.js';
@@ -16,6 +16,7 @@ import { clearAfterSignOut, startSync, syncNow } from './sync.js';
 import { tasteActions, tasteView } from './tasteView.js';
 import { changeAmount, keepFoodDraft, logFood, todayActions, todayView } from './todayView.js';
 import { weekView } from './weekView.js';
+import { addFridgeItem, addPantry, pantryActions, pantryView, setPantryGrams } from './pantryView.js';
 import { navigate, settle, watchScroll } from './motion.js';
 import {
   findTyped,
@@ -39,6 +40,7 @@ const TABS = [
 // Screens that open from a tab and keep it lit. They bring their own title and way back.
 const SUB_VIEWS = {
   profile: profileView,
+  pantry: pantryView,
   stock: stockView,
   taste: tasteView,
   supplements: supplementsView,
@@ -66,6 +68,7 @@ const ACTIONS = {
   ...recipeActions,
   ...chatActions,
   ...scanActions,
+  ...pantryActions,
 };
 
 // The rows under Mehr; each hint is worked out when the screen is drawn.
@@ -97,6 +100,16 @@ const MORE = [
     icon: 'pill',
     label: 'Supplements',
     hint: () => 'Deine und was Claude rät',
+  },
+  {
+    tab: 'pantry',
+    id: 'openPantry',
+    icon: 'jar',
+    label: 'Vorrat',
+    hint: () => {
+      const count = getPantry().length;
+      return count ? `${count} ${count === 1 ? 'Sache' : 'Sachen'} zu Hause` : 'Was du zu Hause hast';
+    },
   },
   {
     tab: 'stock',
@@ -274,6 +287,8 @@ watchKeyboard();
 setOpener(open);
 
 const FORMS = {
+  pantryAdd: addPantry,
+  fridgeAdd: addFridgeItem,
   async signIn() {
     const error = document.getElementById('signInError');
     const button = document.getElementById('signInButton');
@@ -380,6 +395,7 @@ const saveProfileChange = (event) => {
 app.addEventListener('change', (event) => {
   saveProfileChange(event);
   if (event.target.matches?.('select[data-extra]')) changeAmount(event.target);
+  if (event.target.name === 'pantryGrams') setPantryGrams(event.target);
   const file = event.target.files?.[0];
   if (file) {
     const readers = {
