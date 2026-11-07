@@ -16,6 +16,7 @@ import { clearAfterSignOut, startSync, syncNow } from './sync.js';
 import { tasteActions, tasteView } from './tasteView.js';
 import { changeAmount, keepFoodDraft, logFood, todayActions, todayView } from './todayView.js';
 import { weekView } from './weekView.js';
+import { navigate, settle, watchScroll } from './motion.js';
 import {
   findTyped,
   resetScan,
@@ -148,6 +149,7 @@ function draw() {
   if (current !== 'scan') stopScanner();
   paint();
   if (current === 'scan') startScanner();
+  settle(app);
 }
 
 function paint() {
@@ -166,6 +168,7 @@ function paint() {
   const tab = TABS.find((entry) => entry.id === lit) ?? TABS[0];
   const content = sub ? sub() : `<h1>${tab.title}</h1>${tab.view()}`;
   app.innerHTML = `
+    <div class="topbar" aria-hidden="true"><span></span></div>
     <main class="page">${content}</main>
     <nav class="tabs" aria-label="Bereiche">
       ${TABS.map(
@@ -192,9 +195,26 @@ function redrawKeepingPlace() {
 function open(id) {
   if (id === 'chat' && current !== 'chat') chatBack = current;
   if (id === 'scan' && current !== 'scan') resetScan();
+  const from = current;
   current = id;
-  draw();
-  window.scrollTo(0, 0);
+  const deep = (view) => view in SUB_VIEWS;
+  const direction =
+    id === 'chat'
+      ? 'sheet'
+      : from === 'chat'
+        ? 'close'
+        : deep(id) && !deep(from)
+          ? 'push'
+          : deep(from) && !deep(id)
+            ? 'pop'
+            : 'tab';
+  const update = () => {
+    draw();
+    window.scrollTo(0, 0);
+    document.documentElement.classList.remove('scrolled');
+  };
+  if (from === id) return update();
+  navigate(direction, update);
 }
 
 function showGate() {
@@ -245,6 +265,7 @@ function start() {
 }
 
 setRedraw(redrawKeepingPlace);
+watchScroll();
 watchKeyboard();
 setOpener(open);
 
@@ -373,6 +394,10 @@ app.addEventListener('input', (event) => {
   saveProfileChange(event);
   if (event.target.closest?.('#foodLogForm')) keepFoodDraft(event.target.value);
   if (event.target.name === 'scanGrams') setScanGrams(event.target.value);
+  if (event.target.matches?.('#foodLogForm textarea')) {
+    event.target.style.height = 'auto';
+    event.target.style.height = `${Math.min(event.target.scrollHeight, 160)}px`;
+  }
   if (event.target.closest?.('#chatForm')) {
     keepDraft(event.target.value);
     // The field grows with the text, up to a few lines.

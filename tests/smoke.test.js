@@ -193,7 +193,7 @@ async function open({
   snapshot = null,
   appData = null,
 } = {}) {
-  const context = await browser.newContext({ locale: 'de-DE', colorScheme });
+  const context = await browser.newContext({ locale: 'de-DE', colorScheme, reducedMotion: 'reduce' });
   await context.addInitScript((entries) => {
     if (sessionStorage.getItem('seeded')) return;
     sessionStorage.setItem('seeded', '1');
@@ -888,7 +888,7 @@ test('the service worker only ever touches caches with its own prefix', () => {
 });
 
 test('the demo makes a week without an account, never reaches the server and keeps nothing', async () => {
-  const context = await browser.newContext({ locale: 'de-DE' });
+  const context = await browser.newContext({ locale: 'de-DE', reducedMotion: 'reduce' });
   const calls = [];
   await context.route(`${SERVER}/**`, (route) => {
     calls.push(route.request().url());
