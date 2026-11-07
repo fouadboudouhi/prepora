@@ -258,8 +258,8 @@ export function todayView() {
     return `
       <div class="card">
         <h2>Noch kein Plan</h2>
-        <p>Ein Tipp, und Claude plant deine Woche.</p>
-        <button type="button" class="primary" data-tab="plan">Zum Wochenplan</button>
+        <p>Ein Tipp, und Claude plant für dich, so viele Tage du willst.</p>
+        <button type="button" class="primary" data-tab="plan">Zum Plan</button>
       </div>
       ${statusBlock(null, today, targets, profile)}
       ${logBlock(null, today)}

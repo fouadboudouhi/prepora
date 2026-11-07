@@ -878,7 +878,7 @@ test('switches between the five tabs without errors', async () => {
   const { context, page, errors } = await open({ storage: signedIn });
   assert.equal(await page.locator('h1').innerText(), 'Heute');
   for (const [tab, title] of [
-    ['plan', 'Wochenplan'],
+    ['plan', 'Plan'],
     ['shop', 'Einkauf'],
     ['more', 'Mehr'],
     ['today', 'Heute'],

@@ -2505,3 +2505,15 @@ button.row,
   width: 100%;
   margin-top: 16px;
 }
+
+/* Quick taps, as on a stepper, are taps and never a double-tap zoom */
+html,
+button,
+label,
+a {
+  touch-action: manipulation;
+}
+#planShape .stepper-row,
+#planShape .row {
+  min-height: 56px;
+}

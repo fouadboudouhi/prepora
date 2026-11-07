@@ -66,7 +66,7 @@ function shapeBlock() {
       <div class="list">
         ${stepper('days', result.days, 1, MAX_PLAN_DAYS, 'Tage mit Boxen')}
         ${stepper('cookDays', result.cookDays, 1, Math.min(MAX_COOK_DAYS, result.days), 'Kochtage')}
-        <div class="row"><span class="grow">Erster Kochtag</span>
+        <div class="row"><span class="grow">Start</span>
           <span class="segmented" role="group" aria-label="Erster Kochtag">${START_WORDS.map(
             ([value, word]) =>
               `<button type="button" data-action="shapeStart" data-start="${value}" aria-pressed="${shape.start === value}">${value === 'next' ? esc(weekdayOf(planShape().start)) : word}</button>`

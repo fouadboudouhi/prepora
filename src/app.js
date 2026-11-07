@@ -31,7 +31,7 @@ import { updateFromVolumora } from './volumora.js';
 
 const TABS = [
   { id: 'today', label: 'Heute', title: 'Heute', view: todayView },
-  { id: 'plan', label: 'Plan', title: 'Wochenplan', view: planView },
+  { id: 'plan', label: 'Plan', title: 'Plan', view: planView },
   { id: 'shop', label: 'Einkauf', title: 'Einkauf', view: shopView },
   { id: 'chat', label: 'Claude', title: 'Claude' },
   { id: 'more', label: 'Mehr', title: 'Mehr', view: moreView },
