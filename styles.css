@@ -2395,3 +2395,15 @@ button.row,
     transform: translateY(-8px) scale(0.98);
   }
 }
+
+/* Less motion: the small title and the fields switch at once instead of fading */
+@media (prefers-reduced-motion: reduce) {
+  .topbar,
+  .composer.field,
+  #chatForm.composer,
+  .send,
+  .bar > span,
+  .status .day-line {
+    transition: none;
+  }
+}
