@@ -5,6 +5,9 @@ import {
   PLAN_SCHEMA,
   PLAN_SYSTEM,
   buildSlots,
+  freshCookDays,
+  MAX_COOK_DAYS,
+  MAX_PLAN_DAYS,
   carryOver,
   stillGood,
   finishPlan,
@@ -14,6 +17,7 @@ import {
   placeStock,
   planRequest,
   repeatPlan,
+  shopDate,
   skipMeal,
 } from './planner.js';
 import { planAlarms, setAlarms, syncBlocks } from './push.js';
@@ -96,11 +100,25 @@ export function scheduleReminders(plan) {
   return setAlarms(alarms, stale);
 }
 
+// A plan that makes room keeps what was really eaten, so the history and the numbers stay right. Its boxes from
+// `from` on that were not eaten are let go; otherwise they would later count as eaten. A plan nobody used yet goes.
+function retire(old, from) {
+  if (!old) return;
+  const used =
+    old.meals.some((meal) => meal.eaten || meal.date < from) || old.cookDays.some((day) => day.done);
+  if (!used) return;
+  const meals = old.meals.map((meal) =>
+    !meal.eaten && meal.date >= from ? { ...meal, skipped: true, dropped: true } : meal
+  );
+  write('history', [{ ...old, meals }, ...getHistory()].slice(0, KEEP_PLANS));
+}
+
 function adopt(plan) {
   const old = getPlan();
-  if (old && old.id !== plan.id) write('history', [old, ...getHistory()].slice(0, KEEP_PLANS));
+  if (old && old.id !== plan.id) retire(old, plan.start < localDay() ? localDay() : addDaysTo(plan.start, 1));
   scheduleReminders(plan);
   savePlan(plan);
+  syncBlocks(getProfile(), plan);
   write('shop', {});
   // An own recipe asked for once is in the plan now.
   const mine = getMyRecipes();
@@ -109,12 +127,12 @@ function adopt(plan) {
 
 // One correction is worth paying for when the answer breaks a rule. A second one is not; then the person hears it.
 async function requestPlan(options) {
-  const { profile, slots, start, stock, pantry } = options;
+  const { profile, slots, start, stock, pantry, shopOn } = options;
   const content = planRequest(options);
   const ask = (messages) =>
     askClaudeJson({ system: PLAN_SYSTEM, messages, maxTokens: 32000, effort: 'medium', format: PLAN_SCHEMA });
   const first = await ask([{ role: 'user', content }]);
-  const result = finishPlan(first, { profile, slots, start, stock, pantry });
+  const result = finishPlan(first, { profile, slots, start, stock, pantry, shopOn });
   if (!result.problems.length) return result.plan;
   const correction = `Dieser Plan bricht Regeln, korrigiere ihn:\n${result.problems.join('\n')}`;
   const second = await ask([
@@ -122,7 +140,7 @@ async function requestPlan(options) {
     { role: 'assistant', content: JSON.stringify(first) },
     { role: 'user', content: correction },
   ]);
-  const again = finishPlan(second, { profile, slots, start, stock, pantry });
+  const again = finishPlan(second, { profile, slots, start, stock, pantry, shopOn });
   if (again.problems.length) throw new SessionError('badplan', again.problems[0]);
   return again.plan;
 }
@@ -142,16 +160,51 @@ async function runPlanning(work, replacing = null) {
 
 const wishLine = (wish) => (wish ? `Wunsch der Person für diesen Plan: ${wish}` : undefined);
 
-// The first freezer portions go in without asking: they use up what is there and save a recipe. A wish comes from the
-// chat, in the person's words.
-export function newWeek(wish = '') {
-  return runPlanning(() => {
-    const profile = getProfile();
-    const start = nextStart(profile.cookWeekday ?? 0);
+const addDaysTo = (date, days) => {
+  const at = new Date(`${date}T12:00:00`);
+  at.setDate(at.getDate() + days);
+  return localDay(at);
+};
+
+// The shape of one plan: from when, for how many days, with how many cook days. Anything not given comes from the
+// profile. Without a freezer there are as many cook days as it takes for nothing to stand too long.
+export function planShape(options = {}, profile = getProfile(), today = localDay()) {
+  const whole = (value, low, high) => {
+    const n = Math.round(Number(value));
+    return Number.isFinite(n) && n >= low && n <= high ? n : null;
+  };
+  const days = whole(options.days, 1, MAX_PLAN_DAYS) ?? profile.eatDays ?? 7;
+  const wanted = Math.min(whole(options.cookDays, 1, MAX_COOK_DAYS) ?? profile.cookDays ?? 1, days);
+  const cookDays = Math.min(freshCookDays(profile, days, wanted), MAX_COOK_DAYS, days);
+  let start = nextStart(profile.cookWeekday ?? 0, today);
+  if (options.start === 'today') start = today;
+  else if (options.start === 'tomorrow') start = addDaysTo(today, 1);
+  else if (
+    /^\d{4}-\d{2}-\d{2}$/.test(options.start ?? '') &&
+    options.start >= today &&
+    options.start <= addDaysTo(today, 14)
+  )
+    start = options.start;
+  const fixed = options.start !== undefined || options.cookDays !== undefined;
+  const shaped = { ...profile, eatDays: days, cookDays, ...(fixed ? { cookWeekday2: null } : {}) };
+  const regular = shopDate(profile, start);
+  const shopOn = regular < today ? today : regular;
+  const note =
+    cookDays > wanted ? `Ohne Tiefkühler hält nichts ${days} Tage frisch, deshalb ${cookDays} Kochtage.` : '';
+  return { start, days, cookDays, shopOn, profile: shaped, note };
+}
+
+// A new plan. A wish comes from the chat, in the person's words; the shape says from when and for how long.
+// The first freezer portions go in without asking: they use up what is there and save a recipe.
+export function newWeek(wish = '', options = {}) {
+  return runPlanning(async () => {
+    const shape = planShape(options);
+    const profile = shape.profile;
+    const start = shape.start;
     const stock = getStock();
     const placed = placeStock(buildSlots(profile, start), stock, profile.people ?? 1);
     const wanted = getMyRecipes().filter((recipe) => recipe.wanted);
-    return requestPlan({
+    const plan = await requestPlan({
       ownRecipes: wanted.map(({ name, servings, fridgeDays, freezes, reheat, ingredients, steps }) => ({
         name,
         servings,
@@ -167,10 +220,27 @@ export function newWeek(wish = '') {
       stock: stock.filter((item) => placed.used.includes(item.id)),
       pantry: getPantry(),
       start,
+      shopOn: shape.shopOn,
       slots: placed.slots,
       correction: wishLine(wish),
     });
+    return shape.note ? { ...plan, note: shape.note } : plan;
   });
+}
+
+// Away with the current plan. What was eaten from it stays counted; reminders and the ticked shop list go too.
+export function discardPlan() {
+  const old = getPlan();
+  if (!old) return false;
+  retire(old, localDay());
+  setAlarms(
+    [],
+    planAlarms(old, (meal) => mealName(old, meal)).map((alarm) => alarm.id)
+  );
+  savePlan(null);
+  syncBlocks(getProfile(), null);
+  write('shop', {});
+  return true;
 }
 
 // The rest of the plan is meant to stay, so Claude gets it along and only changes this one dish.
@@ -300,4 +370,4 @@ export function applyTrend() {
   return !!change;
 }
 
-export const updateBlocks = () => syncBlocks(getProfile());
+export const updateBlocks = () => syncBlocks(getProfile(), getPlan());

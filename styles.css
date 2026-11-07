@@ -2407,3 +2407,113 @@ button.row,
     transition: none;
   }
 }
+
+/* A new plan of any length: steppers for days and cook days, a segmented choice for the start */
+#planShape {
+  display: grid;
+  gap: 12px;
+}
+#planShape h2 {
+  margin: 0;
+}
+#planShape .list {
+  margin: 0;
+  background: var(--cloud);
+}
+#planShape textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  resize: none;
+}
+#planShape textarea:focus {
+  outline: 0;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+#planShape .primary,
+#planShape .text-button {
+  margin: 0;
+}
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.stepper output {
+  min-width: 32px;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.stepper .round {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 20px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.stepper .round:disabled {
+  opacity: 0.35;
+}
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+.segmented button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.segmented button[aria-pressed='true'] {
+  background: var(--surface);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+}
+#shapeLine {
+  margin: 0;
+  padding: 0 4px;
+}
+.danger-row .block {
+  color: var(--danger);
+}
+#rateHabits {
+  width: 100%;
+  margin-top: 16px;
+}
+
+/* Quick taps, as on a stepper, are taps and never a double-tap zoom */
+html,
+button,
+label,
+a {
+  touch-action: manipulation;
+}
+#planShape .stepper-row,
+#planShape .row {
+  min-height: 56px;
+}

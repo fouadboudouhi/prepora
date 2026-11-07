@@ -66,12 +66,37 @@ const timeOf = (date, time) => new Date(`${date}T${time}:00`).getTime();
 
 // The fixed times of the week, for the next weeks. They stand whether a plan exists or not, and the same day keeps the
 // same id, so changing a time replaces the reminder instead of adding one.
-export function blockAlarms(profile, now = Date.now()) {
+// While a plan runs, its own cook and shop days count; before and after it, the weekdays from the profile.
+export function blockAlarms(profile, now = Date.now(), plan = null) {
   const alarms = [];
   const minutes = profile.cookMinutes ?? 90;
+  const cookDates = (plan?.cookDays ?? []).filter((day) => !day.done).map((day) => day.date);
+  const lastMeal = (plan?.meals ?? []).reduce((last, meal) => (meal.date > last ? meal.date : last), '');
+  const firstDay = plan ? [plan.shopOn, plan.start].filter(Boolean).sort()[0] : '';
   for (let days = 0; days < BLOCK_DAYS; days += 1) {
     const date = dateAhead(now, days);
     const weekday = new Date(`${date}T12:00:00`).getDay();
+    if (plan && date >= firstDay && date <= lastMeal) {
+      const index = cookDates.indexOf(date);
+      if (index >= 0)
+        alarms.push({
+          id: `cook-${date}`,
+          at: timeOf(
+            date,
+            index === 0 ? (profile.cookTime ?? '10:00') : (profile.cookTime2 ?? profile.cookTime ?? '18:00')
+          ),
+          title: 'Zeit zum Kochen',
+          body: `Dein Kochtag, etwa ${minutes} Minuten`,
+        });
+      if (date === plan.shopOn)
+        alarms.push({
+          id: `shop-${date}`,
+          at: timeOf(date, profile.shopTime ?? '17:00'),
+          title: 'Zeit zum Einkaufen',
+          body: 'Deine Liste für den ganzen Plan ist bereit',
+        });
+      continue;
+    }
     if (weekday === (profile.cookWeekday ?? 0))
       alarms.push({
         id: `cook-${date}`,
@@ -97,8 +122,8 @@ export function blockAlarms(profile, now = Date.now()) {
   return alarms.filter((alarm) => alarm.at > now);
 }
 
-export function syncBlocks(profile) {
-  const alarms = blockAlarms(profile);
+export function syncBlocks(profile, plan = null) {
+  const alarms = blockAlarms(profile, Date.now(), plan);
   const keep = new Set(alarms.map((alarm) => alarm.id));
   const stale = [];
   for (let days = 0; days < CANCEL_DAYS; days += 1)

@@ -35,16 +35,32 @@ export function buildSlots(profile, start) {
   return slots;
 }
 
-// The second cook day sits in the middle of the week.
-export const cookDates = (profile, start) =>
-  (profile.cookDays ?? 1) === 2 ? [start, secondCookDay(profile, start)] : [start];
+// Cook days: the first on the start day, more spread evenly over the eating days. Two with a fixed weekday from the
+// profile keep that weekday, as long as it falls inside the plan.
+export function cookDates(profile, start) {
+  const days = profile.eatDays ?? 7;
+  const count = Math.min(Math.max(Math.round(profile.cookDays ?? 1), 1), MAX_COOK_DAYS, days);
+  if (count === 2 && profile.cookWeekday2 !== undefined && profile.cookWeekday2 !== null) {
+    const second = secondCookDay(profile, start);
+    if (dayNumber(second) - dayNumber(start) <= days) return [start, second];
+  }
+  return [
+    ...new Set(
+      Array.from({ length: count }, (_, index) => addDays(start, Math.round((index * days) / count)))
+    ),
+  ];
+}
+export const MAX_COOK_DAYS = 4;
+export const MAX_PLAN_DAYS = 14;
 
 function secondCookDay(profile, start) {
-  if (profile.cookWeekday2 === undefined || profile.cookWeekday2 === null)
-    return addDays(start, Math.ceil((profile.eatDays ?? 7) / 2));
   const ahead = (profile.cookWeekday2 - new Date(`${start}T00:00:00Z`).getUTCDay() + 7) % 7;
   return addDays(start, ahead || 7);
 }
+
+// How many cook days keep everything fresh: without a freezer nothing may wait longer than the fridge allows.
+export const freshCookDays = (profile, days, wanted) =>
+  profile.freezer === false ? Math.max(wanted, Math.ceil(days / FRIDGE_DAYS)) : wanted;
 
 // One shop a week: the last shop day before the first cook day, or that very day.
 export function shopDate(profile, start) {
@@ -156,10 +172,10 @@ export const PLAN_SCHEMA = {
   },
 };
 
-export const PLAN_SYSTEM = `Du planst Foodprep für Menschen, die ein- bis zweimal pro Woche für die ganze Woche kochen.
+export const PLAN_SYSTEM = `Du planst Foodprep für einen frei gewählten Zeitraum: so viele Tage und Kochtage, wie die Person sagt.
 
 Regeln:
-- Baukasten statt fünfmal dasselbe: wenige Proteine, Beilagen und Saucen, die sich unterschiedlich kombinieren. Wiederhole ein Gericht höchstens dreimal in der Woche.
+- Baukasten statt fünfmal dasselbe: wenige Proteine, Beilagen und Saucen, die sich unterschiedlich kombinieren. Wiederhole ein Gericht höchstens dreimal hintereinander.
 - Der Kochtag hat eine gemeinsame Zeitleiste über alle Rezepte: Parallel Laufendes nutzen, Timer für alles Unbeaufsichtigte, realistisch für die angegebene Zeit und die vorhandenen Geräte.
 - Mengen in "grams" sind die Rohgewichte für alle Portionen dieses Rezepts zusammen. Schritte nennen keine Mengen, nur Temperaturen und Zeiten.
 - "food" ist genau eine Kennung aus der Liste. Passt keine, ist "food" leer und "per100" enthält deine Schätzung pro 100 g; sonst sind in "per100" alle Werte 0.
@@ -173,7 +189,7 @@ Regeln:
 - Deutsch, kurz und klar. "reheat" ist ein kurzer Satz wie "2 Minuten Mikrowelle".
 - "twists": zwei bis drei kleine Varianten pro Rezept, die beim Aufwärmen in einer Minute aus derselben Box etwas anderes machen, zum Beispiel "Mit Limette und Koriander". Was sie brauchen, steht in "ingredients".
 - "fillers": zwei bis drei Bausteine ganz ohne Kochen für den Rest des Tagesziels, zum Beispiel Frühstück oder Snack. "when" ist kurz wie "Frühstück", "servings" die Portionen für die Woche, "ingredients" die Mengen für alle Portionen. Ist keine Lücke genannt, ist die Liste leer.
-- Es wird nur einmal pro Woche eingekauft. Frisches Fleisch und frischer Fisch für einen späteren Kochtag müssen bis dahin halten: dann als Tiefkühlware planen oder im Kochablauf ans Auftauen erinnern. Empfindliches Gemüse und Kräuter früh in der Woche verbrauchen.
+- Es wird einmal für den ganzen Plan eingekauft. Frisches Fleisch und frischer Fisch für einen späteren Kochtag müssen bis dahin halten: dann als Tiefkühlware planen oder im Kochablauf ans Auftauen erinnern. Empfindliches Gemüse und Kräuter früh in der Woche verbrauchen.
 - "packEuro": geschätzter Preis einer Packung im deutschen Discounter, bei loser Ware der Preis für diese Menge. Gewürze und Grundvorrat wie Salz, Pfeffer und Öl stehen auch in "ingredients", mit "food" "gewuerze" wenn sie kaum Kalorien haben.
 
 Erlaubte Lebensmittel-Kennungen: ${FOOD_IDS.join(', ')}`;
@@ -198,6 +214,7 @@ export function planRequest({
   previous,
   ownRecipes = [],
   pantry = [],
+  shopOn = null,
 }) {
   const fresh = pantry.filter(isPerishable);
   const shelf = pantry.filter((entry) => !isPerishable(entry));
@@ -222,7 +239,8 @@ export function planRequest({
     shelf.length
       ? `Noch zu Hause, gern verwenden, die App zieht es vom Einkauf ab: ${listed(shelf)}. Nutze dafür dieselbe "food"-Kennung.`
       : '',
-    `Einkauf: einmal pro Woche, am ${shopDate(profile, start)}.`,
+    `Zeitraum: ${profile.eatDays ?? 7} Tage, gegessen vom ${addDays(start, 1)} bis ${addDays(start, profile.eatDays ?? 7)}.`,
+    `Einkauf: einmal, am ${shopOn ?? shopDate(profile, start)}.`,
     profile.budget ? `Wochenbudget für den Einkauf: etwa ${profile.budget} Euro.` : '',
     gap ? `Lücke pro Tag und Person für "fillers": ca. ${gap.kcal} kcal und ${gap.protein} g Eiweiß.` : '',
     ownRecipes.length
@@ -272,7 +290,7 @@ const perPortion = (total, portions) =>
   Object.fromEntries(Object.entries(total).map(([key, value]) => [key, Math.round(value / portions)]));
 
 // Turns Claude's answer into the plan the app uses, or says what is wrong with it. `problems` go back to Claude once.
-export function finishPlan(answer, { profile, slots, start, stock = [], pantry = [] }) {
+export function finishPlan(answer, { profile, slots, start, stock = [], pantry = [], shopOn = null }) {
   const problems = [];
   const people = profile.people ?? 1;
   const recipes = new Map((answer.recipes ?? []).map((recipe) => [recipe.id, recipe]));
@@ -377,7 +395,8 @@ export function finishPlan(answer, { profile, slots, start, stock = [], pantry =
   const plan = {
     id: `${start}-${Date.now()}`,
     start,
-    shopOn: shopDate(profile, start),
+    shopOn: shopOn ?? shopDate(profile, start),
+    days: profile.eatDays ?? 7,
     createdAt: new Date().toISOString(),
     people,
     recipes: finished,

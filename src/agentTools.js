@@ -12,6 +12,7 @@ import {
   getSupplements,
   getTaste,
   newWeek,
+  discardPlan,
   planning,
   repeatBestWeek,
   replaceRecipe,
@@ -49,7 +50,7 @@ const PROFILE_FIELDS = {
   age: { type: 'integer', minimum: 18, maximum: 100 },
   height: { type: 'integer', minimum: 120, maximum: 230 },
   weight: { type: 'number', minimum: 35, maximum: 250 },
-  cookDays: { type: 'integer', enum: [1, 2] },
+  cookDays: { type: 'integer', minimum: 1, maximum: 4 },
   cookWeekday: weekday,
   cookTime: { type: 'string', pattern: TIME },
   cookWeekday2: weekday,
@@ -57,7 +58,7 @@ const PROFILE_FIELDS = {
   shopWeekday: weekday,
   shopTime: { type: 'string', pattern: TIME },
   cookMinutes: { type: 'integer', enum: [60, 90, 120] },
-  eatDays: { type: 'integer', enum: [5, 7] },
+  eatDays: { type: 'integer', minimum: 1, maximum: 14 },
   people: { type: 'integer', minimum: 1, maximum: 4 },
   meals: { type: 'array', items: { type: 'string', enum: MEALS } },
   freezer: { type: 'boolean' },
@@ -101,8 +102,26 @@ export const TOOLS = [
   {
     name: 'create_plan',
     description:
-      'Erstellt einen neuen Wochenplan ab dem nächsten Kochtag, mit Rezepten, Kochablauf und Einkaufsliste. Der bisherige Plan kommt in den Verlauf. Dauert ein bis zwei Minuten und kostet etwas Budget. Profil und Geschmack fließen von selbst ein; ändere sie vorher, wenn die Person das will.',
-    input_schema: { type: 'object', additionalProperties: false, properties: { wish } },
+      'Erstellt einen neuen Plan mit Rezepten, Kochablauf und Einkaufsliste. Zeitraum frei wählbar: days = Tage, an denen aus den Boxen gegessen wird (1 bis 14), cookDays = Anzahl Kochtage (1 bis 4), start = Kochtag "today", "tomorrow", ein Datum JJJJ-MM-TT oder weglassen für den nächsten Kochtag aus dem Profil. Gegessen wird ab dem Tag nach dem ersten Kochtag. Was nicht angegeben ist, kommt aus dem Profil; das Profil selbst bleibt unverändert. Der bisherige Plan wird ersetzt, schon Gegessenes bleibt gezählt. Die App achtet selbst auf Haltbarkeit: ohne Tiefkühler plant sie genug Kochtage, sonst kommt, was zu lange stünde, in den Tiefkühler. Dauert ein bis zwei Minuten und kostet etwas Budget.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        wish,
+        days: { type: 'integer', minimum: 1, maximum: 14 },
+        cookDays: { type: 'integer', minimum: 1, maximum: 4 },
+        start: {
+          type: 'string',
+          description: '"today", "tomorrow" oder JJJJ-MM-TT, höchstens 14 Tage voraus',
+        },
+      },
+    },
+  },
+  {
+    name: 'discard_plan',
+    description:
+      'Verwirft den aktuellen Plan ohne neuen. Schon Gegessenes bleibt gezählt, Erinnerungen und Einkaufshaken fallen weg. Für "verwerfen und neu machen" reicht create_plan allein.',
+    input_schema: { type: 'object', additionalProperties: false, properties: {} },
   },
   {
     name: 'replace_dish',
@@ -223,7 +242,8 @@ export const TOOL_STATUS = {
   get_recipe: 'Liest das Rezept …',
   get_cook_day: 'Schaut in den Kochablauf …',
   get_shopping_list: 'Schaut in die Einkaufsliste …',
-  create_plan: 'Erstellt den Wochenplan, das dauert ein bis zwei Minuten …',
+  create_plan: 'Erstellt den Plan, das dauert ein bis zwei Minuten …',
+  discard_plan: 'Verwirft den Plan …',
   replace_dish: 'Tauscht das Gericht …',
   repeat_best_week: 'Wiederholt die beste Woche …',
   update_profile: 'Ändert das Profil …',
@@ -264,6 +284,8 @@ function planSummary(plan) {
   if (!plan) return null;
   return {
     start: plan.start,
+    days: plan.days ?? null,
+    note: plan.note ?? null,
     cookDays: (plan.cookDays ?? []).map((day) => day.date ?? day),
     shopOn: plan.shopOn ?? null,
     estimatedCostEuro: plan.cost ?? null,
@@ -466,7 +488,11 @@ export async function runTool(name, input = {}) {
       };
     }
     case 'create_plan':
-      return plan(() => newWeek(input.wish ?? ''));
+      return plan(() =>
+        newWeek(input.wish ?? '', { days: input.days, cookDays: input.cookDays, start: input.start })
+      );
+    case 'discard_plan':
+      return discardPlan() ? { ok: true, plan: null } : { error: 'Es gibt gerade keinen Plan.' };
     case 'replace_dish':
       if (!recipeOf(getPlan(), input.recipeId))
         return { error: 'Dieses Rezept gibt es im aktuellen Plan nicht.' };

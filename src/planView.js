@@ -1,9 +1,11 @@
 // Der Wochenplan: one tap makes a week. Everything else on this screen is optional.
 import {
   bestWeek,
+  discardPlan,
   getFridge,
   getPlan,
   newWeek,
+  planShape,
   planning,
   repeatBestWeek,
   replaceRecipe,
@@ -13,11 +15,74 @@ import { askClaudeJson } from './ai.js';
 import { icon } from './icons.js';
 import { dailyTargets } from './nutrition.js';
 import { MEALS, getProfile, saveProfile } from './profile.js';
-import { boxCheck, mealName, mealNutrition, weekdayOf } from './planner.js';
+import {
+  FRIDGE_DAYS,
+  MAX_COOK_DAYS,
+  MAX_PLAN_DAYS,
+  boxCheck,
+  mealName,
+  mealNutrition,
+  weekdayOf,
+} from './planner.js';
 import { shrink } from './photo.js';
 import { dayLabel, errorText, esc, number, rerender } from './ui.js';
 
 const fridgeState = { busy: false, error: null };
+
+// A new plan of any length: days, cook days and the start are chosen here, the wish is optional.
+const shape = { open: false, days: null, cookDays: null, start: 'next', wish: '', confirmDiscard: false };
+const START_WORDS = [
+  ['today', 'Heute'],
+  ['tomorrow', 'Morgen'],
+  ['next', ''],
+];
+
+function freshLine(result, profile) {
+  if (result.note) return result.note;
+  const longest = Math.ceil(result.days / result.cookDays);
+  if (longest <= FRIDGE_DAYS) return 'Alles hält im Kühlschrank bis zum Essen.';
+  return profile.freezer === false
+    ? 'Ohne Tiefkühler bleibt alles frisch, weil öfter gekocht wird.'
+    : `Was länger als ${FRIDGE_DAYS} Tage stehen würde, kommt in den Tiefkühler. Die App erinnert ans Auftauen.`;
+}
+
+function shapeBlock() {
+  const profile = getProfile();
+  const result = planShape({ days: shape.days, cookDays: shape.cookDays, start: shape.start });
+  shape.days = result.days;
+  shape.cookDays = result.cookDays;
+  const stepper = (key, value, low, high, word) => `
+    <div class="row stepper-row">
+      <span class="grow">${word}</span>
+      <span class="stepper">
+        <button type="button" class="round" data-action="shapeStep" data-key="${key}" data-by="-1" aria-label="${word}: weniger"${value <= low ? ' disabled' : ''}>−</button>
+        <output id="shape-${key}" aria-live="polite">${value}</output>
+        <button type="button" class="round" data-action="shapeStep" data-key="${key}" data-by="1" aria-label="${word}: mehr"${value >= high ? ' disabled' : ''}>+</button>
+      </span>
+    </div>`;
+  return `
+    <section class="card" id="planShape">
+      <h2>Neuer Plan</h2>
+      <div class="list">
+        ${stepper('days', result.days, 1, MAX_PLAN_DAYS, 'Tage mit Boxen')}
+        ${stepper('cookDays', result.cookDays, 1, Math.min(MAX_COOK_DAYS, result.days), 'Kochtage')}
+        <div class="row"><span class="grow">Start</span>
+          <span class="segmented" role="group" aria-label="Erster Kochtag">${START_WORDS.map(
+            ([value, word]) =>
+              `<button type="button" data-action="shapeStart" data-start="${value}" aria-pressed="${shape.start === value}">${value === 'next' ? esc(weekdayOf(planShape().start)) : word}</button>`
+          ).join('')}</span>
+        </div>
+      </div>
+      <p class="small muted" id="shapeLine">${esc(dayLabel(result.start))} kochen, ${result.days} ${result.days === 1 ? 'Tag' : 'Tage'} essen. ${esc(freshLine(result, profile))}</p>
+      <textarea name="shapeWish" rows="2" maxlength="300" placeholder="Wunsch, z. B. mehr Hähnchen, nichts Scharfes" aria-label="Wunsch für den Plan">${esc(shape.wish)}</textarea>
+      <button type="button" class="primary" data-action="shapePlan"${planning.busy ? ' disabled' : ''}>Plan erstellen</button>
+      <button type="button" class="text-button" data-action="shapeClose">Abbrechen</button>
+    </section>`;
+}
+
+export const keepShapeWish = (text) => {
+  shape.wish = text;
+};
 
 const FRIDGE_SCHEMA = {
   type: 'object',
@@ -144,7 +209,7 @@ export function planView() {
   const error = planning.error ? `<p class="error" role="alert">${esc(errorText(planning.error))}</p>` : '';
   if (!plan)
     return `
-      ${planning.busy ? busyBlock() : `<div class="card"><h2>Deine Woche</h2><p>Einmal tippen. Claude plant nach deinem Ziel und deinem Geschmack.</p><button type="button" class="primary" data-action="newWeek">Woche planen</button></div>`}
+      ${shape.open && !planning.busy ? shapeBlock() : planning.busy ? busyBlock() : `<div class="card"><h2>Dein Plan</h2><p>Einmal tippen. Claude plant nach deinem Ziel und deinem Geschmack.</p><button type="button" class="primary" data-action="newWeek">Plan erstellen</button><button type="button" class="text-button" data-action="shapeOpen">Tage und Kochtage wählen</button></div>`}
       ${error}
       ${fridgeBlock()}`;
 
@@ -156,6 +221,8 @@ export function planView() {
     <p class="sub">Im Schnitt ca. ${number(average.kcal)} kcal, ${number(average.protein)} g Eiweiß am Tag</p>
     ${planning.busy ? busyBlock() : ''}
     ${error}
+    ${plan.note ? `<p class="note" id="planNote">${esc(plan.note)}</p>` : ''}
+    ${shape.open && !planning.busy ? shapeBlock() : ''}
     ${
       cook
         ? `<section class="hero">
@@ -206,11 +273,11 @@ export function planView() {
         )
         .join('')}
     </div>
-    <h2 class="section">Nächste Woche</h2>
+    <h2 class="section">Plan ändern</h2>
     <div class="list" id="planMore">
-      <button type="button" class="row go" data-action="newWeek"${planning.busy ? ' disabled' : ''}>
+      <button type="button" class="row go" data-action="shapeOpen"${planning.busy ? ' disabled' : ''}>
         <span class="tile">${icon('plan')}</span>
-        <span class="grow"><span class="block">Neue Woche planen</span><span class="muted small">Claude plant nach Ziel und Geschmack</span></span>
+        <span class="grow"><span class="block">Neu planen</span><span class="muted small">Tage, Kochtage und Start frei wählen</span></span>
       </button>
       ${
         best
@@ -221,6 +288,9 @@ export function planView() {
           : ''
       }
       ${fridgeRow()}
+      <button type="button" class="row danger-row" data-action="discardPlan" id="discardPlan"${planning.busy ? ' disabled' : ''}>
+        <span class="grow"><span class="block">${shape.confirmDiscard ? 'Wirklich verwerfen? Nochmal tippen' : 'Plan verwerfen'}</span><span class="muted small">Schon Gegessenes bleibt gezählt</span></span>
+      </button>
     </div>
     ${fridgeItems()}`;
 }
@@ -271,6 +341,42 @@ export const planActions = {
     rerender();
   },
   newWeek: () => newWeek(),
+  shapeOpen: () => {
+    Object.assign(shape, { open: true, confirmDiscard: false });
+    rerender();
+    document.getElementById('planShape')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  },
+  shapeClose: () => {
+    shape.open = false;
+    rerender();
+  },
+  shapeStep: (el) => {
+    const key = el.dataset.key;
+    shape[key] = (shape[key] ?? 1) + Number(el.dataset.by);
+    if (key === 'days') shape.cookDays = Math.min(shape.cookDays ?? 1, shape.days);
+    rerender();
+  },
+  shapeStart: (el) => {
+    shape.start = el.dataset.start;
+    rerender();
+  },
+  shapePlan: () => {
+    const options = { days: shape.days, cookDays: shape.cookDays };
+    if (shape.start !== 'next') options.start = shape.start;
+    const wish = shape.wish.trim();
+    Object.assign(shape, { open: false, wish: '' });
+    newWeek(wish, options);
+  },
+  discardPlan: () => {
+    if (!shape.confirmDiscard) {
+      shape.confirmDiscard = true;
+      rerender();
+      return;
+    }
+    shape.confirmDiscard = false;
+    discardPlan();
+    rerender();
+  },
   repeatWeek: () => repeatBestWeek(),
   replaceRecipe: (el) => replaceRecipe(el.dataset.id),
   dropFridge: (el) => {

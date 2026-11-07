@@ -14,6 +14,7 @@ import {
   boxLabels,
   buildSlots,
   cookDates,
+  freshCookDays,
   finishPlan,
   nextStart,
   placeStock,
@@ -694,6 +695,33 @@ test('the boxes are counted before the cook day, and a shortage is named', () =>
 test('a second cook day follows the chosen weekday', () => {
   assert.deepEqual(cookDates({ cookDays: 2, cookWeekday2: 3 }, START), [START, '2026-11-11']);
   assert.deepEqual(cookDates({ cookDays: 2, cookWeekday2: 0 }, START), [START, '2026-11-15']);
+});
+
+test('cook days spread over a plan of any length, and without a freezer there are enough of them', () => {
+  assert.deepEqual(cookDates({ cookDays: 1, eatDays: 4 }, START), [START]);
+  assert.deepEqual(cookDates({ cookDays: 3, eatDays: 9 }, START), [START, '2026-11-11', '2026-11-14']);
+  assert.deepEqual(cookDates({ cookDays: 4, eatDays: 2 }, START), [START, '2026-11-09']);
+  assert.deepEqual(cookDates({ cookDays: 2, cookWeekday2: 3, eatDays: 2 }, START), [START, '2026-11-09']);
+  assert.equal(freshCookDays({ freezer: false }, 10, 1), 3);
+  assert.equal(freshCookDays({ freezer: false }, 4, 1), 1);
+  assert.equal(freshCookDays({ freezer: true }, 10, 1), 1);
+});
+
+test('while a plan runs its own cook and shop days remind, not the weekdays', () => {
+  const at = new Date('2026-11-03T08:00:00').getTime();
+  const plan = {
+    start: '2026-11-04',
+    shopOn: '2026-11-03',
+    cookDays: [{ date: '2026-11-04' }, { date: '2026-11-06' }],
+    meals: [{ date: '2026-11-05' }, { date: '2026-11-08' }],
+  };
+  const alarms = blockAlarms({ cookWeekday: 0, shopWeekday: 6, cookTime: '10:00' }, at, plan);
+  const ids = alarms.map((alarm) => alarm.id);
+  assert.ok(
+    ids.includes('cook-2026-11-04') && ids.includes('cook-2026-11-06') && ids.includes('shop-2026-11-03')
+  );
+  assert.ok(!ids.includes('cook-2026-11-08') && !ids.includes('shop-2026-11-07'));
+  assert.ok(ids.includes('cook-2026-11-15'));
 });
 
 test('fixed times become reminders for the coming weeks, at the chosen time', () => {

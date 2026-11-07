@@ -207,10 +207,12 @@ export function profileView() {
         <div class="list">
           ${choice(
             'cookDays',
-            'Kochtage pro Woche',
+            'Kochtage pro Plan',
             [
               [1, 'Einer'],
               [2, 'Zwei'],
+              [3, 'Drei'],
+              [4, 'Vier'],
             ],
             profile.cookDays
           )}
@@ -230,11 +232,11 @@ export function profileView() {
           ${several('meals', 'Vorkochen für', MEALS, profile.meals, 'Nichts')}
           ${choice(
             'eatDays',
-            'Gegessen wird an',
-            [
-              [5, '5 Tagen'],
-              [7, '7 Tagen'],
-            ],
+            'Tage pro Plan',
+            Array.from({ length: 14 }, (_, index) => [
+              index + 1,
+              index === 0 ? '1 Tag' : `${index + 1} Tage`,
+            ]),
             profile.eatDays
           )}
           ${choice(
