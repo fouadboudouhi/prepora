@@ -1480,8 +1480,10 @@ test('food said in a few words lands on today, known foods counted by the app, a
   await page.waitForSelector('#eatenList');
   const list = await page.locator('#eatenList').innerText();
   // Skyr is known: 65 kcal per 100 g, whatever Claude guessed. The Döner is Claude's estimate and says so.
-  assert.match(list, /Skyr, 200 g\s+ca\. 130 kcal, 22 g Eiweiß/);
-  assert.match(list, /Döner\s+ca\. 700 kcal, 30 g Eiweiß, geschätzt/);
+  assert.match(list, /Skyr, 200 g[\s\S]*22 g Eiweiß[\s\S]*130 kcal/);
+  assert.match(list, /Döner[\s\S]*30 g Eiweiß[\s\S]*700 kcal/);
+  assert.equal(await page.locator('#eatenList .kcal.guess').count(), 1, 'only the Döner is a guess');
+  assert.match(await page.locator('#eatenFoot').innerText(), /geschätzt/);
   assert.match(await page.locator('.day-line').innerText(), /^830/);
   assert.match(await page.locator('#macros').innerText(), /Fett 35 g · Kohlenhydrate 68 g/);
   assert.equal(await page.locator('[name="food"]').inputValue(), '');
@@ -1590,7 +1592,7 @@ test('a barcode typed in finds the product, the amount sets the numbers, and it 
   await page.click('[data-action="scanLog"]');
   assert.equal(await page.locator('h1').innerText(), 'Heute');
   const list = await page.locator('#eatenList').innerText();
-  assert.match(list, /Nutella, 15 g\s+ca\. 81 kcal, 1 g Eiweiß/);
+  assert.match(list, /Nutella, 15 g[\s\S]*1 g Eiweiß[\s\S]*81 kcal/);
   assert.doesNotMatch(list, /geschätzt/);
   assert.deepEqual(
     asked.map((url) => new URL(url).pathname),

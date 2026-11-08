@@ -100,16 +100,24 @@ const AMOUNTS = [
   [3, '3×'],
 ];
 
+// One line per thing eaten: the name, how much, and the kcal on the right where the eye looks for numbers.
 const entryRow = (entry) => `
   <div class="row eaten" data-key="${esc(entry.id ?? entry.name)}">
-    <span class="grow"><span class="block">${esc(entry.name)}</span><span class="muted small">ca. ${number(entry.kcal)} kcal, ${number(entry.protein)} g Eiweiß${entry.estimated ? ', geschätzt' : ''}</span></span>
+    <span class="grow">
+      <span class="block">${esc(entry.name)}</span>
+      <span class="meta">${
+        entry.kind === 'extra'
+          ? `<select class="amount" data-extra="${esc(entry.id)}" aria-label="Menge: ${esc(entry.name)}">${AMOUNTS.map(
+              ([value, label]) =>
+                `<option value="${value}"${(entry.factor ?? 1) === value ? ' selected' : ''}>${label}</option>`
+            ).join('')}</select><span class="dot" aria-hidden="true">·</span>`
+          : ''
+      }${number(entry.protein)} g Eiweiß${entry.estimated ? '<span class="sr">, geschätzt</span>' : ''}</span>
+    </span>
+    <span class="kcal${entry.estimated ? ' guess' : ''}"><strong>${number(entry.kcal)}</strong> kcal</span>
     ${
       entry.kind === 'extra'
-        ? `<select class="amount" data-extra="${esc(entry.id)}" aria-label="Menge: ${esc(entry.name)}">${AMOUNTS.map(
-            ([value, label]) =>
-              `<option value="${value}"${(entry.factor ?? 1) === value ? ' selected' : ''}>${label}</option>`
-          ).join('')}</select>
-           <button type="button" class="mini" data-action="removeExtra" data-id="${esc(entry.id)}" aria-label="${esc(entry.name)} entfernen">${icon('close')}</button>`
+        ? `<button type="button" class="mini" data-action="removeExtra" data-id="${esc(entry.id)}" aria-label="${esc(entry.name)} entfernen">${icon('close')}</button>`
         : ''
     }
   </div>`;
@@ -143,7 +151,7 @@ function logBlock(plan, today) {
     <section id="foodLog">
       <h2 class="section">Gegessen</h2>
       <form id="foodLogForm" class="composer field" novalidate>
-        <textarea name="food" rows="2" maxlength="400" enterkeyhint="done" aria-label="Was hast du gegessen?" placeholder="Was hast du gegessen?"${log.busy ? ' disabled' : ''}>${esc(log.draft)}</textarea>
+        <textarea name="food" rows="1" maxlength="400" enterkeyhint="done" aria-label="Was hast du gegessen?" placeholder="Was hast du gegessen?"${log.busy ? ' disabled' : ''}>${esc(log.draft)}</textarea>
         <div class="field-bar">
           <button type="button" class="tool" data-tab="scan" id="scanButton" aria-label="Barcode scannen">${icon('barcode')}</button>
           <label class="tool" id="dishPhotoLabel"><span class="sr">Essen fotografieren</span>${icon('camera')}<input id="dishPhoto" type="file" accept="image/*" capture="environment" hidden></label>
@@ -154,6 +162,7 @@ function logBlock(plan, today) {
       ${log.error ? `<p class="note error" role="alert">${esc(errorText(log.error))}</p>` : ''}
       ${suggestions(plan, today)}
       ${eaten.length ? `<div class="list" id="eatenList">${eaten.map(entryRow).join('')}</div>` : ''}
+      ${eaten.some((entry) => entry.estimated) ? '<p class="foot" id="eatenFoot">≈ von Claude geschätzt. Alle Werte sind ungefähr.</p>' : ''}
     </section>`;
 }
 
