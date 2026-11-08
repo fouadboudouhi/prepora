@@ -24,6 +24,6 @@ npm test
 
 ## Aufbau
 
-Reines JavaScript ohne Build-Schritt, wie [Volumora](https://github.com/fouadboudouhi/volumora). Was auf `main` landet, ist über GitHub Pages sofort live. Konten, Datenspeicher und die KI-Anbindung laufen über den Server aus dem Volumora-Repo (`sync-server/`).
+Reines JavaScript ohne Build-Schritt, wie [Volumora](https://github.com/fouadboudouhi/volumora). Was auf `main` landet, ist über GitHub Pages sofort live. Konten, Datenspeicher und die KI-Anbindung laufen über den Server aus dem Volumora-Repo (`sync-server/`). Ein Konto entsteht direkt in Prepora mit einem Einladungscode, den der Admin unter Mehr erstellt; Volumora selbst braucht man dafür nicht.
 
 Schriften und ihre Lizenz: [THIRD_PARTY_ASSETS.md](THIRD_PARTY_ASSETS.md).

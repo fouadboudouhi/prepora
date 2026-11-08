@@ -2574,3 +2574,17 @@ a {
 #pantryMore {
   margin-top: 24px;
 }
+
+/* The switch between sign-in and a new account reads like the link it was. */
+.gate .link {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--accent-ink, var(--accent));
+  text-decoration: underline;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}

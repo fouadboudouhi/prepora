@@ -218,11 +218,19 @@ async function open({
         ? reply(200, { token: 'fouad.neu' })
         : reply(401, { error: 'user' });
     }
+    if (path === '/v1/register') {
+      const { username, password, invite } = JSON.parse(request.postData());
+      if (invite !== 'abc123') return reply(403, { error: 'invite' });
+      if (password.length < 8) return reply(400, { error: 'password' });
+      return reply(200, { token: `${username}.neu` });
+    }
+    if (path === '/v1/admin/invites') return reply(200, { code: 'neu789' });
     if (path === '/v1/logout') return reply(200, { ok: true });
     if (request.headers().authorization === 'Bearer abgelaufen.x') return reply(401, { error: 'session' });
     if (path === '/v1/me')
       return reply(200, {
         username: 'fouad',
+        admin: true,
         ai: { available: true, budget: 5, used: 0.12, month: '2026-11' },
       });
     if (path === '/v1/ai/messages') {
@@ -377,7 +385,7 @@ async function signIn(page, username = 'fouad', password = 'richtiges-passwort')
   await page.click('#signInButton');
 }
 
-test('asks for the Volumora account first and opens the app with the right password', async () => {
+test('asks for an account first and opens the app with the right password', async () => {
   const { context, page, errors, calls } = await open();
   assert.equal(await page.locator('h1').innerText(), 'Prepora');
   assert.equal(await page.locator('#username').getAttribute('autocomplete'), 'username');
@@ -390,6 +398,41 @@ test('asks for the Volumora account first and opens the app with the right passw
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-session')));
   assert.equal(stored.token, 'fouad.neu');
   assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('a Prepora account can be made with an invite, without Volumora', async () => {
+  const { context, page, calls } = await open();
+  await page.click('#gateRegister');
+  await page.fill('#username', 'lea');
+  await page.fill('#password', 'langes-passwort');
+  await page.fill('#inviteInput', 'falsch');
+  await page.click('#signInButton');
+  await page.waitForSelector('#signInError:not([hidden])');
+  assert.match(await page.locator('#signInError').innerText(), /Einladung/);
+  await page.fill('#inviteInput', 'abc123');
+  await page.click('#signInButton');
+  await page.waitForSelector('[data-tab="today"]');
+  const sent = JSON.parse(calls.filter((call) => call.path === '/v1/register').at(-1).body);
+  assert.deepEqual(sent, { username: 'lea', password: 'langes-passwort', invite: 'abc123' });
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-session')));
+  assert.equal(stored.token, 'lea.neu');
+  await context.close();
+});
+
+test('an invite link opens on the new account with the code filled in, and the admin can make one', async () => {
+  const { context, page } = await open();
+  await page.goto(`${baseURL}/?invite=abc123`);
+  await page.waitForSelector('#register');
+  assert.equal(await page.locator('#inviteInput').inputValue(), 'abc123');
+  await page.click('#gateSignIn');
+  await signIn(page);
+  await page.waitForSelector('[data-tab="today"]');
+  await page.click('[data-tab="more"]');
+  await page.waitForSelector('#createInvite');
+  await page.click('#createInvite');
+  await page.waitForSelector('#inviteCode');
+  assert.equal(await page.locator('#inviteCode').innerText(), 'neu789');
   await context.close();
 });
 

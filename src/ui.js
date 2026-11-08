@@ -10,6 +10,11 @@ export const dayLabel = (date) => {
 
 const ERRORS = {
   user: 'Benutzername oder Passwort stimmt nicht.',
+  invite: 'Diese Einladung gibt es nicht oder sie wurde schon benutzt.',
+  username:
+    'Der Benutzername braucht 3 bis 32 Zeichen: Kleinbuchstaben, Ziffern, Punkt, Strich oder Unterstrich.',
+  password: 'Das Passwort braucht mindestens 8 Zeichen.',
+  taken: 'Diesen Benutzernamen gibt es schon.',
   network: 'Der Server ist gerade nicht erreichbar.',
   blocked: 'Zu viele Versuche. Bitte in zehn Minuten nochmal.',
   budget: 'Das Claude-Budget für diesen Monat ist aufgebraucht.',

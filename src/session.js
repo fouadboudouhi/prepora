@@ -1,5 +1,6 @@
-// The Volumora account also opens Prepora: same server, same name and password, and through it the same Claude key.
-// The key stays on the server. Prepora's own data has its own place there; the Volumora data is only ever read.
+// A Prepora account lives on the home server. It can be made right here with an invite; a Volumora account works as
+// well, since both use the same server. The Claude key stays there. Prepora's own data has its own place on the
+// server; Volumora data, if there is any, is only ever read.
 const KEY = 'prepora-session';
 const SIGNED_OUT = 'prepora-signed-out';
 // Volumora shares this domain, so a browser signed in there can use that sign-in here. An app installed on an iPhone
@@ -93,6 +94,33 @@ export async function signIn(username, password) {
   return save({ url: SERVER_URL, username: username.trim().toLowerCase(), token });
 }
 
+// A new account needs an invite code. The server says what is wrong, in one word.
+const REGISTER_PROBLEMS = ['invite', 'username', 'password', 'taken'];
+export async function register(username, password, invite) {
+  let response;
+  try {
+    response = await call(
+      '/v1/register',
+      { method: 'POST', body: JSON.stringify({ username, password, invite }) },
+      ''
+    );
+  } catch (err) {
+    if (REGISTER_PROBLEMS.includes(err.detail)) throw new SessionError(err.detail);
+    throw err;
+  }
+  const { token } = await response.json().catch(() => ({}));
+  if (typeof token !== 'string' || !token.includes('.')) throw new SessionError('server');
+  return save({ url: SERVER_URL, username: username.trim().toLowerCase(), token });
+}
+
+// Only the admin may. The code goes to someone who then makes an account in Prepora.
+export async function createInvite() {
+  const response = await call('/v1/admin/invites', { method: 'POST' });
+  const { code } = await response.json().catch(() => ({}));
+  if (typeof code !== 'string' || !code) throw new SessionError('server');
+  return code;
+}
+
 export async function signOut() {
   const session = getSession();
   forget();
@@ -108,7 +136,7 @@ export async function refreshMe() {
   try {
     const response = await call('/v1/me', {}, session.token);
     const me = await response.json();
-    update({ ai: me.ai ?? null });
+    update({ ai: me.ai ?? null, admin: !!me.admin });
     return me;
   } catch (err) {
     if (err.code === 'user') forget();
