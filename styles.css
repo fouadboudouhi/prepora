@@ -3038,3 +3038,22 @@ h2.section,
 .cook-actions .icon {
   font-size: 26px;
 }
+
+/* Another cooked dish instead: the choices open inside the card */
+.hero .choices {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.hero .choices > .muted {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.hero .choices .row {
+  width: 100%;
+  text-align: left;
+}
+.hero .choices .meta {
+  color: var(--muted);
+  font-size: 14px;
+}

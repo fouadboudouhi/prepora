@@ -1365,6 +1365,52 @@ test('"Heute nicht" decides by itself what happens to the box', async () => {
   await context.close();
 });
 
+test('"Anderes Gericht" swaps today\'s box with another cooked dish', async () => {
+  const at = new Date();
+  const day = (offset) => {
+    const d = new Date(at.getFullYear(), at.getMonth(), at.getDate() + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const dish = (id, name) => ({
+    id,
+    name,
+    cookDate: day(-1),
+    fridgeDays: 4,
+    freezes: false,
+    reheat: '',
+    ingredients: [],
+    nutrition: { kcal: 600, protein: 40 },
+  });
+  const plan = {
+    id: 'p',
+    start: day(-1),
+    people: 1,
+    recipes: [dish('a', 'Chili'), dish('b', 'Curry'), dish('c', 'Ofen-Hähnchen')],
+    fillers: [],
+    meals: [
+      { id: 'm1', date: day(0), meal: 'Mittagessen', recipeId: 'a', storage: 'fridge' },
+      { id: 'm2', date: day(0), meal: 'Abendessen', recipeId: 'c', storage: 'fridge' },
+      { id: 'm3', date: day(1), meal: 'Mittagessen', recipeId: 'b', storage: 'fridge' },
+    ],
+    cookDays: [{ date: day(-1), minutes: 90, steps: [], done: true }],
+  };
+  const { context, page } = await open({ storage: { ...ready, 'prepora-plan': plan } });
+  await page.click('#swapOpen');
+  assert.equal(await page.locator('#swapList [data-action="swapMeal"]').count(), 2);
+  assert.match(await page.locator('#swapList').innerText(), /Curry[\s\S]*Geplant: .+, Mittagessen/);
+  await page
+    .locator('#nextMeal')
+    .screenshot({ path: 'tests/swap.png' })
+    .catch(() => {});
+  await page.locator('[data-other="m3"]').click();
+  assert.match(await page.locator('#nextMeal h2').innerText(), /Curry/);
+  assert.match(await page.locator('#notice').innerText(), /Chili gibt es jetzt am .+ zum Mittagessen/);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')));
+  assert.equal(saved.meals.find((meal) => meal.id === 'm3').date, day(0));
+  assert.equal(saved.meals.find((meal) => meal.id === 'm1').date, day(1));
+  await context.close();
+});
+
 test('the list has everything for the week in one shop', async () => {
   const { context, page } = await open({ storage: ready });
   await page.click('[data-tab="more"]');
