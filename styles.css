@@ -2724,3 +2724,317 @@ h2.section,
 .row.eaten .amount {
   padding: 1px 7px;
 }
+
+/* Kochmodus: overview, free steps, timers per step, Claude in the kitchen */
+.cook {
+  padding-bottom: calc(110px + env(safe-area-inset-bottom));
+}
+.cook h1 {
+  margin: 18px 0 4px;
+}
+.cook section {
+  margin-top: 24px;
+}
+.icon-space {
+  width: 44px;
+}
+.icon .glyph {
+  width: 22px;
+  height: 22px;
+}
+.cook .tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cook .tags li {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 15px;
+}
+.uses {
+  margin: 16px 0 0;
+  padding: 4px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  list-style: none;
+}
+.uses li {
+  display: grid;
+  grid-template-columns: minmax(84px, auto) 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  font-size: 16px;
+}
+.uses li + li {
+  border-top: 1px solid var(--line);
+}
+.uses .qty {
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.dish {
+  padding: 0 16px;
+}
+.dish + .dish {
+  border-top: 1px solid var(--line);
+}
+.dish summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  list-style: none;
+  cursor: pointer;
+}
+.dish summary::-webkit-details-marker {
+  display: none;
+}
+.dish summary::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: var(--muted);
+  mask: var(--updown) center / contain no-repeat;
+  -webkit-mask: var(--updown) center / contain no-repeat;
+}
+.dish .uses {
+  margin: 0 0 12px;
+  padding: 0;
+}
+.flow {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.flow li + li {
+  border-top: 1px solid var(--line);
+}
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 16px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.flow-step .block {
+  display: block;
+}
+.flow-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cloud);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.flow-mark .glyph {
+  width: 16px;
+  height: 16px;
+}
+.flow-step.done .flow-mark {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.flow-step.done .block {
+  color: var(--muted);
+}
+.flow-step.now {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.flow-step.now .flow-mark {
+  outline: 2px solid var(--accent);
+  color: var(--accent-ink);
+}
+.cook .step {
+  flex-grow: 0;
+}
+.cook .step p {
+  font-size: 18px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.done-when {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px 12px 12px 4px;
+  background: var(--surface);
+}
+.cook .step .done-when {
+  font-size: 16px;
+}
+.step-timer,
+.step-timer-start {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 16px 0 0;
+  min-height: 52px;
+}
+.step-timer {
+  padding: 0 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+.cook .step .step-timer {
+  font-size: 16px;
+  color: var(--accent-ink);
+}
+.step-timer .grow {
+  flex: 1;
+}
+.step-timer-start {
+  justify-content: center;
+}
+.step-timer .glyph,
+.step-timer-start .glyph,
+.cook-actions .glyph {
+  width: 20px;
+  height: 20px;
+}
+.all-ingredients {
+  margin-top: 12px;
+  color: var(--muted);
+}
+.all-ingredients summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--accent-ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+.up-next {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  margin-top: 24px;
+  padding: 12px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.timers {
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.cook .timers {
+  margin-top: 16px;
+}
+.timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 0;
+}
+.timer + .timer {
+  border-top: 1px solid var(--line);
+}
+.timer-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 44px;
+  justify-content: center;
+  padding: 4px 0 4px 16px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.timer-then {
+  color: var(--accent-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.timer.over {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.timer.over .time {
+  color: var(--accent-ink);
+}
+.cook-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  grid-template-columns: 1fr 2fr;
+  margin: 0;
+  padding: 12px max(16px, calc((100% - 680px) / 2)) max(16px, env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--paper) 70%, transparent);
+}
+.cook-actions.three {
+  grid-template-columns: 52px 1fr 1.8fr;
+}
+.cook-actions .icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 26px;
+}
+.cook-actions .secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.cook-chat .chat-foot .timers {
+  margin-bottom: 8px;
+}
+.now-line {
+  margin: 0 4px 8px;
+  font-size: 14px;
+}
+.cook .step {
+  margin-top: 0;
+}
+.cook .step h1 {
+  margin: 10px 0 12px;
+}
+.cook .step > p {
+  margin: 0;
+}
+.cook .step .uses {
+  margin-top: 18px;
+}
+.cook-actions .icon {
+  font-size: 26px;
+}

@@ -1,4 +1,5 @@
 // Der Wochenplan: one tap makes a week. Everything else on this screen is optional.
+import { cookButton } from './cookView.js';
 import {
   bestWeek,
   deleteOldPlans,
@@ -258,7 +259,7 @@ export function planView() {
                 .join(', ')
             )}</p>
             <p class="plain" id="boxLine">${esc(boxLine(plan, cook.date))}</p>
-            <button type="button" class="primary" data-action="startCook" data-date="${cook.date}">Kochtag starten</button>
+            <button type="button" class="primary" data-action="startCook" data-date="${cook.date}">${cookButton(cook.date)}</button>
           </section>`
         : ''
     }

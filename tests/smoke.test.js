@@ -86,34 +86,40 @@ function fakePlan(request) {
       {
         date: start,
         minutes: 90,
-        steps: [
-          { recipeId: '', title: 'Ofen an', detail: '200 °C.', timerMinutes: 0, timerName: '' },
-          {
-            recipeId: 'bowl',
-            title: 'Reis aufsetzen',
-            detail: 'Quellen lassen.',
-            timerMinutes: 12,
-            timerName: 'Reis',
-          },
-          {
-            recipeId: 'chili',
-            title: 'Hack anbraten',
-            detail: 'Durchgaren.',
-            timerMinutes: 30,
-            timerName: 'Chili',
-          },
-          {
-            recipeId: '',
-            title: 'Portionieren',
-            detail: 'In Boxen abkühlen lassen.',
-            timerMinutes: 0,
-            timerName: '',
-          },
-        ],
+        equipment: ['Großer Topf mit Deckel', 'Große Pfanne'],
+        steps: FAKE_STEPS,
       },
     ],
   };
 }
+const fakeStep = (recipeId, title, detail, uses = [], timer = [0, '', '']) => ({
+  recipeId,
+  title,
+  detail,
+  uses: uses.map(([amount, name]) => ({ name, amount })),
+  doneWhen: '',
+  timerMinutes: timer[0],
+  timerName: timer[1],
+  timerThen: timer[2],
+});
+const FAKE_STEPS = [
+  fakeStep('', 'Ofen an', '200 °C Umluft.'),
+  fakeStep(
+    'bowl',
+    'Reis aufsetzen',
+    '800 g Reis in den großen Topf, Deckel drauf. Timer starten.',
+    [['800 g', 'Reis']],
+    [12, 'Reis', 'Herd aus, 5 Min. ziehen lassen']
+  ),
+  fakeStep(
+    'chili',
+    'Hack anbraten',
+    '1400 g Hack in die große Pfanne, durchgaren.',
+    [['1400 g', 'Rinderhack']],
+    [30, 'Chili', 'Abschmecken']
+  ),
+  fakeStep('', 'Portionieren', 'In Boxen abkühlen lassen.'),
+];
 const streamOf = (text) =>
   [
     `data: ${JSON.stringify({ type: 'message_start', message: {} })}`,
@@ -236,6 +242,23 @@ async function open({
     if (path === '/v1/ai/messages') {
       if (claude !== 200) return reply(claude, { error: 'budget' });
       const asked = JSON.parse(request.postData());
+      if (asked.tools?.some((tool) => tool.name === 'go_to_step'))
+        return route.fulfill({
+          status: 200,
+          headers: { ...cors, 'content-type': 'text/event-stream' },
+          body: agentStream(
+            Array.isArray(asked.messages.at(-1).content)
+              ? [{ type: 'text', text: 'Nimm **Petersilie**, ich habe den Schritt angepasst.' }]
+              : [
+                  {
+                    type: 'tool_use',
+                    id: 'tu-cook',
+                    name: 'change_step',
+                    input: { stepId: 's3', detail: 'Mit Petersilie statt Koriander. Durchgaren.' },
+                  },
+                ]
+          ),
+        });
       if (asked.tools?.some((tool) => tool.name === 'get_overview'))
         return route.fulfill({
           status: 200,
@@ -261,91 +284,93 @@ async function open({
       const said = JSON.stringify(asked.messages);
       const text = isPlan
         ? JSON.stringify(fakePlan(asked))
-        : isPhoto
-          ? JSON.stringify({ items: ['Paprika', 'Quark'] })
-          : required.includes('assumption')
-            ? JSON.stringify({
-                goal: 'cut',
-                activity: 'medium',
-                reason: 'Du willst Fett verlieren und trainierst dreimal.',
-                assumption: 'Ich gehe von einem Bürojob aus.',
-              })
-            : required.includes('kcalLow')
-              ? JSON.stringify(
-                  said.includes('Lasagne')
-                    ? {
-                        isFood: true,
-                        dish: 'Lasagne',
-                        confidence: 'mittel',
-                        reason: '',
-                        portion: 'Normale Portion',
-                        kcalLow: 600,
-                        kcalHigh: 800,
-                        protein: 30,
-                        components: ['Nudeln', 'Hack', 'Käse'],
-                      }
-                    : {
-                        isFood: true,
-                        dish: 'Auflauf',
-                        confidence: 'niedrig',
-                        reason: 'Die Menge ist nicht zu sehen.',
-                        portion: '',
-                        kcalLow: 200,
-                        kcalHigh: 900,
-                        protein: 10,
-                        components: [],
-                      }
-                )
-              : required.includes('recommended')
-                ? JSON.stringify({
-                    recommended: [
-                      {
-                        name: 'Kreatin',
-                        dose: '3 g',
-                        when: 'Täglich',
-                        why: 'Hilft beim Muskelaufbau.',
-                        evidence: 'stark',
-                        caution: '',
-                      },
-                      {
-                        name: 'Vitamin D',
-                        dose: '1000 IE',
-                        when: 'Im Winter',
-                        why: 'Wenig Sonne.',
-                        evidence: 'mittel',
-                        caution: 'Vorher Bluttest.',
-                      },
-                    ],
-                    notNeeded: [{ name: 'BCAA', why: 'Dein Eiweiß reicht.' }],
-                    note: 'Du brauchst wenig.',
-                  })
-                : required.includes('found')
-                  ? JSON.stringify(
-                      said.includes('kein Rezept')
-                        ? {
-                            found: false,
-                            name: '',
-                            servings: 0,
-                            fridgeDays: 0,
-                            freezes: false,
-                            reheat: '',
-                            ingredients: [],
-                            steps: [],
-                          }
-                        : {
-                            found: true,
-                            name: 'Omas Gulasch',
-                            servings: 4,
-                            fridgeDays: 4,
-                            freezes: true,
-                            reheat: '3 Minuten',
-                            ingredients: [
-                              FAKE_FOOD('Rindfleisch', 'rindfleisch', 800, 'Fleisch und Fisch', 500),
-                            ],
-                            steps: ['Schmoren'],
-                          }
-                    )
-                  : 'Nimm Petersilie.';
+        : required.includes('equipment')
+          ? JSON.stringify({ minutes: 80, equipment: ['Topf'], steps: FAKE_STEPS })
+          : isPhoto
+            ? JSON.stringify({ items: ['Paprika', 'Quark'] })
+            : required.includes('assumption')
+              ? JSON.stringify({
+                  goal: 'cut',
+                  activity: 'medium',
+                  reason: 'Du willst Fett verlieren und trainierst dreimal.',
+                  assumption: 'Ich gehe von einem Bürojob aus.',
+                })
+              : required.includes('kcalLow')
+                ? JSON.stringify(
+                    said.includes('Lasagne')
+                      ? {
+                          isFood: true,
+                          dish: 'Lasagne',
+                          confidence: 'mittel',
+                          reason: '',
+                          portion: 'Normale Portion',
+                          kcalLow: 600,
+                          kcalHigh: 800,
+                          protein: 30,
+                          components: ['Nudeln', 'Hack', 'Käse'],
+                        }
+                      : {
+                          isFood: true,
+                          dish: 'Auflauf',
+                          confidence: 'niedrig',
+                          reason: 'Die Menge ist nicht zu sehen.',
+                          portion: '',
+                          kcalLow: 200,
+                          kcalHigh: 900,
+                          protein: 10,
+                          components: [],
+                        }
+                  )
+                : required.includes('recommended')
+                  ? JSON.stringify({
+                      recommended: [
+                        {
+                          name: 'Kreatin',
+                          dose: '3 g',
+                          when: 'Täglich',
+                          why: 'Hilft beim Muskelaufbau.',
+                          evidence: 'stark',
+                          caution: '',
+                        },
+                        {
+                          name: 'Vitamin D',
+                          dose: '1000 IE',
+                          when: 'Im Winter',
+                          why: 'Wenig Sonne.',
+                          evidence: 'mittel',
+                          caution: 'Vorher Bluttest.',
+                        },
+                      ],
+                      notNeeded: [{ name: 'BCAA', why: 'Dein Eiweiß reicht.' }],
+                      note: 'Du brauchst wenig.',
+                    })
+                  : required.includes('found')
+                    ? JSON.stringify(
+                        said.includes('kein Rezept')
+                          ? {
+                              found: false,
+                              name: '',
+                              servings: 0,
+                              fridgeDays: 0,
+                              freezes: false,
+                              reheat: '',
+                              ingredients: [],
+                              steps: [],
+                            }
+                          : {
+                              found: true,
+                              name: 'Omas Gulasch',
+                              servings: 4,
+                              fridgeDays: 4,
+                              freezes: true,
+                              reheat: '3 Minuten',
+                              ingredients: [
+                                FAKE_FOOD('Rindfleisch', 'rindfleisch', 800, 'Fleisch und Fisch', 500),
+                              ],
+                              steps: ['Schmoren'],
+                            }
+                      )
+                    : 'Nimm Petersilie.';
       return route.fulfill({
         status: 200,
         headers: { ...cors, 'content-type': 'text/event-stream' },
@@ -748,26 +773,69 @@ test('from one tap to a week: plan, list, cook day, boxes, freezer, eating, rati
 
   await page.click('[data-tab="plan"]');
   await page.click('[data-action="startCook"]');
-  assert.equal(await page.locator('#stepTitle').innerText(), 'Ofen an');
+  // First the whole day at a glance: what it takes, the dishes, every step.
   assert.equal(await page.locator('.tabs').count(), 0);
+  assert.match(await page.locator('#equipment').innerText(), /Großer Topf mit Deckel/);
+  assert.match(await page.locator('#dishes').innerText(), /Chili con Carne/);
+  assert.equal(await page.locator('#flow li').count(), 4);
+  assert.equal(await page.locator('#refine').count(), 0, 'new plans have exact steps');
+  await page.click('#beginCook');
+  assert.equal(await page.locator('#stepTitle').innerText(), 'Ofen an');
+  assert.match(await page.locator('#upNext').innerText(), /Reis aufsetzen/);
   await page.click('#nextStep');
-  assert.match(await page.locator('#nextStep').innerText(), /Timer starten, 12 Min/);
-  await page.locator('summary').click();
-  assert.match(await page.locator('details').innerText(), /g Reis/);
-  await page.click('#nextStep');
-  assert.match(await page.locator('[data-timer]').first().innerText(), /^(12:00|11:5\d)$/);
-
-  await page.click('[data-action="toggleHelper"]');
-  await page.fill('[name="question"]', 'Ich habe keinen Koriander');
-  await page.click('#cookHelper button[type="submit"]');
-  await page.waitForSelector('.answer');
-  assert.match(await page.locator('.answer').innerText(), /Petersilie/);
-
-  await page.reload();
+  assert.equal(await page.locator('#stepTitle').innerText(), 'Reis aufsetzen');
+  assert.match(await page.locator('#stepUses').innerText(), /800 g\s+Reis/);
+  // The timer is its own button; "Weiter" works without it.
+  assert.match(await page.locator('#stepTimer').innerText(), /Timer starten, 12 Min/);
+  assert.match(await page.locator('#nextStep').innerText(), /Erledigt, weiter/);
+  await page.click('#stepTimer');
+  assert.match(await page.locator('#stepTimer [data-timer]').innerText(), /^(12:00|11:5\d)$/);
+  // Back and forth never starts a second timer.
+  await page.click('[data-action="prevStep"]');
+  assert.equal(await page.locator('#stepTitle').innerText(), 'Ofen an');
+  await page.click('#upNext');
+  assert.equal(await page.locator('#stepTitle').innerText(), 'Reis aufsetzen');
+  assert.equal(await page.locator('[data-timer]').count(), 1);
+  // Any step, in any order, from the list.
+  await page.click('[data-action="showOverview"]');
+  await page.click('#flow li:nth-child(3) button');
   assert.equal(await page.locator('#stepTitle').innerText(), 'Hack anbraten');
-  assert.equal(await page.locator('[data-timer]').count(), 1, 'a timer survives a reload');
+  assert.match(await page.locator('#timers').innerText(), /Reis/);
+
+  // Claude in the kitchen knows the whole day and changes the step itself.
+  await page.click('[data-action="openCookChat"]');
+  await page.fill('#cookQuestion', 'Ich habe keinen Koriander');
+  await page.click('#cookAsk button[type="submit"]');
+  await page.waitForSelector('#cookChat .bubble:not(.mine) .chat-change');
+  assert.match(await page.locator('#cookChat').innerText(), /Petersilie/);
+  const cookCall = calls.filter((call) => call.path === '/v1/ai/messages').at(-2);
+  const kitchen = JSON.parse(cookCall.body).system;
+  for (const part of [
+    'Chili con Carne',
+    'Hähnchen-Reis-Bowl',
+    '800 g Reis',
+    '[JETZT] id s3',
+    '[offen] id s4',
+    'Reis (id',
+  ])
+    assert.ok(kitchen.includes(part), part);
+  await page.click('[data-action="closeCookChat"]');
+  assert.match(await page.locator('#stepDetail').innerText(), /Petersilie/);
+
+  // The × only pauses: progress and timers stay, the button says so.
+  await page.click('[data-action="leaveCook"]');
+  await page.click('[data-tab="plan"]');
+  assert.equal(await page.locator('[data-action="startCook"]').innerText(), 'Weiterkochen');
+  await page.reload();
+  await page.click('[data-tab="plan"]');
+  await page.click('[data-action="startCook"]');
+  assert.equal(await page.locator('#stepTitle').innerText(), 'Hack anbraten');
+  assert.equal(await page.locator('[data-timer]').count(), 1, 'a timer survives a pause and a reload');
 
   await page.click('#nextStep');
+  assert.equal(await page.locator('#stepTitle').innerText(), 'Portionieren');
+  await page.click('#nextStep');
+  assert.equal(await page.locator('#stepTitle').innerText(), 'Reis aufsetzen', 'an open step is not skipped');
   await page.click('#nextStep');
   const labels = await page.locator('#labels').innerText();
   assert.match(labels, /Tiefkühler/);
@@ -1150,6 +1218,12 @@ for (const colorScheme of ['light', 'dark']) {
     await week.page.click('[data-tab="plan"]');
     await week.page.click('[data-action="startCook"]');
     assert.deepEqual(await check(week.page), []);
+    await week.page.click('#beginCook');
+    await week.page.click('#nextStep');
+    await week.page.click('#stepTimer');
+    assert.deepEqual(await check(week.page), []);
+    await week.page.click('[data-action="openCookChat"]');
+    assert.deepEqual(await check(week.page), []);
     await week.context.close();
   });
 }
@@ -1160,6 +1234,86 @@ test('a sign-out leaves nothing of this person on the device', async () => {
   await page.click('#signOut');
   await page.waitForSelector('#signIn');
   assert.equal(await page.evaluate(() => localStorage.getItem('prepora-profile')), null);
+  await context.close();
+});
+
+test('an older plan still cooks: its session goes on, the amounts are found, Claude makes the steps exact', async () => {
+  const at = new Date();
+  const today = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+  const food = (name, grams) => ({ ...FAKE_FOOD(name, '', grams, 'Vorrat', 0) });
+  const plan = {
+    id: 'old',
+    start: today,
+    people: 1,
+    recipes: [
+      {
+        id: 'chili',
+        name: 'Chili con Carne',
+        cookDate: today,
+        fridgeDays: 4,
+        freezes: true,
+        reheat: '',
+        ingredients: [
+          food('Rinderhack mager', 420),
+          food('Zwiebeln', 145),
+          food('Olivenöl', 30),
+          food('Reis', 480),
+        ],
+        nutrition: { kcal: 600, protein: 40 },
+      },
+    ],
+    fillers: [],
+    meals: [{ id: '1-Mittagessen', date: today, meal: 'Mittagessen', recipeId: 'chili', storage: 'fridge' }],
+    cookDays: [
+      {
+        date: today,
+        minutes: 60,
+        steps: [
+          {
+            recipeId: '',
+            title: 'Alles bereitlegen',
+            detail: 'Zwiebeln schneiden.',
+            timerMinutes: 0,
+            timerName: '',
+          },
+          {
+            recipeId: 'chili',
+            title: 'Chili ansetzen',
+            detail: 'Hack anbraten, Zwiebeln dazu.',
+            timerMinutes: 30,
+            timerName: 'Chili',
+          },
+          { recipeId: '', title: 'Portionieren', detail: 'Abkühlen lassen.', timerMinutes: 0, timerName: '' },
+        ],
+      },
+    ],
+  };
+  const session = { date: today, step: 1, timers: [{ id: 't1', name: 'Chili', endAt: Date.now() + 600000 }] };
+  const { context, page } = await open({
+    storage: { ...ready, 'prepora-plan': plan, 'prepora-cook': session },
+  });
+  await page.waitForSelector('#stepTitle');
+  assert.equal(await page.locator('#stepTitle').innerText(), 'Chili ansetzen');
+  const uses = await page.locator('#stepUses').innerText();
+  assert.match(uses, /420 g\s+Rinderhack mager/);
+  assert.match(uses, /145 g\s+Zwiebeln/);
+  assert.doesNotMatch(uses, /Reis/);
+  assert.equal(await page.locator('[data-timer]').count(), 1);
+
+  await page.click('[data-action="showOverview"]');
+  assert.match(await page.locator('#flow li:first-child').innerText(), /Alles bereitlegen/);
+  assert.equal(await page.locator('#flow .flow-step.done').count(), 1);
+  await page.click('[data-action="refineCook"]');
+  await page.waitForSelector('#refine', { state: 'detached' });
+  assert.equal(await page.locator('#flow li').count(), 4);
+  assert.match(await page.locator('#equipment').innerText(), /Topf/);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('prepora-plan')));
+  assert.equal(saved.cookDays[0].minutes, 80);
+  assert.deepEqual(
+    saved.recipes[0].ingredients.map((item) => item.grams),
+    [420, 145, 30, 480],
+    'recipes stay'
+  );
   await context.close();
 });
 

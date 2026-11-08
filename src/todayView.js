@@ -1,4 +1,5 @@
 // Heute: what to eat now and the one thing to do next. Eating is one tap; rating it is a second, optional one.
+import { cookButton } from './cookView.js';
 import {
   addExtra,
   eat,
@@ -296,7 +297,7 @@ export function todayView() {
   return `
     ${
       cookToday
-        ? `<section class="hero"><span class="eyebrow">Kochtag</span><h2>Etwa ${cookToday.minutes} Minuten</h2><button type="button" class="primary" data-action="startCook" data-date="${cookToday.date}">Kochtag starten</button></section>`
+        ? `<section class="hero"><span class="eyebrow">Kochtag</span><h2>Etwa ${cookToday.minutes} Minuten</h2><button type="button" class="primary" data-action="startCook" data-date="${cookToday.date}">${cookButton(cookToday.date)}</button></section>`
         : ''
     }
     ${yesterdayBlock(plan, today)}

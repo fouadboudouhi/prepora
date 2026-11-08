@@ -1,7 +1,7 @@
 // The shell: sign-in or a new account with an invite, four tabs, and the full-screen cook day above them.
 import { applyTrend, getPantry, getPlan, getStock, settleShopping, updateBlocks } from './actions.js';
 import { chatActions, drawChat, keepDraft, send, watchKeyboard } from './chatView.js';
-import { askHelper, cookActions, cookView, cooking, startTicking } from './cookView.js';
+import { cookActions, cookAsk, cookView, cooking, startTicking } from './cookView.js';
 import { keepShapeWish, planActions, planView, readFridgePhoto } from './planView.js';
 import { photoActions, photoView, readDishPhoto, recheckDish } from './photoView.js';
 import { saveFromForm, profileActions, profileView, showTargets } from './profileView.js';
@@ -219,6 +219,8 @@ function paint() {
     if (page) {
       app.innerHTML = page;
       startTicking();
+      const thread = document.getElementById('cookChat');
+      if (thread) thread.scrollTop = thread.scrollHeight;
       return;
     }
   }
@@ -417,11 +419,7 @@ const FORMS = {
     form.elements.message.blur();
     send(text);
   },
-  cookHelper(form) {
-    const question = form.elements.question.value;
-    form.elements.question.blur();
-    askHelper(question);
-  },
+  cookAsk,
 };
 
 app.addEventListener('submit', (event) => {
@@ -494,7 +492,7 @@ app.addEventListener('input', (event) => {
 // Return sends, Shift and Return makes a new line.
 app.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-  const form = event.target.closest?.('#chatForm, #foodLogForm');
+  const form = event.target.closest?.('#chatForm, #foodLogForm, #cookAsk');
   if (!form) return;
   event.preventDefault();
   form.requestSubmit();
