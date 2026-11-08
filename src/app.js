@@ -65,9 +65,10 @@ const ACTIONS = {
   },
   shareInvite: async () => {
     const link = inviteLink(inviting.code);
-    const text = `Dein Zugang zu Prepora: ${link}`;
     try {
-      if (navigator.share) await navigator.share({ title: 'Prepora', text, url: link });
+      // The link goes only in url: apps like WhatsApp add it after the text themselves.
+      if (navigator.share)
+        await navigator.share({ title: 'Prepora', text: 'Dein Zugang zu Prepora:', url: link });
       else await navigator.clipboard.writeText(link);
     } catch {
       // Closed without sharing.
