@@ -538,6 +538,7 @@ export async function runTool(name, input = {}) {
             name: item.name,
             detail: item.detail,
             inCart: !!checked[item.id],
+            ...(item.optional ? { optional: true } : {}),
           })),
         })),
       };
