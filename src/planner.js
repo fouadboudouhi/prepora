@@ -718,3 +718,53 @@ export function skipMeal(plan, mealId, { today, freezer = true }) {
   meal.skipped = true;
   return { outcome: 'expired' };
 }
+
+// Could this box still be eaten on `date`? A fridge box only within its days and once it is cooked; a thawed box
+// only today or tomorrow.
+function keepsUntil(plan, meal, date, today) {
+  if (meal.storage === 'freezer') return dayNumber(date) - dayNumber(today) <= (meal.moved ? 0 : 1);
+  const recipe = recipeOf(plan, meal.recipeId);
+  const cooked = plan.cookDays.some((day) => day.done && day.date === recipe?.cookDate);
+  return cooked && dayNumber(date) - dayNumber(recipe.cookDate) <= recipe.fridgeDays;
+}
+
+// What could be eaten instead of this box today: other dishes that are cooked and ready (in the fridge, or thawed
+// for today), one box per dish, the earliest. Only where today's box keeps until the other's day, so it swaps places.
+export function swapChoices(plan, mealId, today) {
+  const meal = plan?.meals.find((entry) => entry.id === mealId);
+  if (!meal) return [];
+  const seen = new Set([mealName(plan, meal)]);
+  return plan.meals
+    .filter(
+      (other) =>
+        other.id !== meal.id &&
+        !other.eaten &&
+        !other.skipped &&
+        !other.missed &&
+        other.date >= today &&
+        (other.storage === 'freezer' ? other.date === today : keepsUntil(plan, other, today, today)) &&
+        keepsUntil(plan, meal, other.date, today)
+    )
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .filter((other) => {
+      const dish = mealName(plan, other);
+      if (seen.has(dish)) return false;
+      seen.add(dish);
+      return true;
+    });
+}
+
+// Two boxes change places: day and meal. A thawed box that goes to tomorrow has used its one extra day.
+export function swapMeal(plan, mealId, otherId, today) {
+  const meal = plan.meals.find((entry) => entry.id === mealId);
+  const other = swapChoices(plan, mealId, today).find((entry) => entry.id === otherId);
+  if (!meal || !other) return null;
+  const slot = { date: meal.date, meal: meal.meal };
+  Object.assign(meal, { date: other.date, meal: other.meal });
+  Object.assign(other, slot);
+  for (const box of [meal, other]) if (box.storage === 'freezer' && box.date > today) box.moved = true;
+  // The list stays in the order of the days, which the screens rely on.
+  const [a, b] = [plan.meals.indexOf(meal), plan.meals.indexOf(other)];
+  [plan.meals[a], plan.meals[b]] = [other, meal];
+  return { meal, other };
+}

@@ -23,6 +23,7 @@ import {
   shoppingCost,
   shoppingList,
   skipMeal,
+  swapMeal,
 } from './planner.js';
 import { planAlarms, setAlarms, syncBlocks } from './push.js';
 import { SessionError } from './session.js';
@@ -566,6 +567,14 @@ export function skip(mealId) {
   }
   savePlan(plan);
   return result.outcome;
+}
+
+// Today another cooked dish: the two boxes change places.
+export function swap(mealId, otherId) {
+  const plan = getPlan();
+  const result = plan && swapMeal(plan, mealId, otherId, localDay());
+  if (result) savePlan(plan);
+  return result;
 }
 
 // Once in a while the real weight curve corrects the target; the person only reads about it.

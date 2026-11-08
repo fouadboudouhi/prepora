@@ -13,18 +13,20 @@ import {
   saveSupplements,
   setExtraFactor,
   skip,
+  swap,
 } from './actions.js';
 import { askClaudeJson } from './ai.js';
 import { LOG_SCHEMA, LOG_SYSTEM, dayIntake, entryFrom, recentFoods, shift, weekIntake } from './foodLog.js';
 import { dailyTargets, GOALS } from './nutrition.js';
 import { icon } from './icons.js';
 import { getProfile } from './profile.js';
-import { localDay, mealName, mealNutrition, recipeOf } from './planner.js';
+import { localDay, mealName, mealNutrition, recipeOf, swapChoices } from './planner.js';
 import { targetText } from './profileView.js';
 import { SessionError } from './session.js';
 import { dayLabel, errorText, esc, number, rerender } from './ui.js';
 
 let justEaten = null;
+let choosing = false;
 let notice = '';
 const GAP_KCAL = 150;
 const GAP_PROTEIN = 15;
@@ -165,6 +167,28 @@ function logBlock(plan, today) {
       ${eaten.length ? `<div class="list" id="eatenList">${eaten.map(entryRow).join('')}</div>` : ''}
       ${eaten.some((entry) => entry.estimated) ? '<p class="foot" id="eatenFoot">≈ von Claude geschätzt. Alle Werte sind ungefähr.</p>' : ''}
     </section>`;
+}
+
+// The other cooked dishes that could be eaten now instead; tapping one swaps the two boxes.
+function choiceBlock(plan, meal, today) {
+  const choices = swapChoices(plan, meal.id, today);
+  if (!choices.length) return '';
+  const when = (other) => `${other.date === today ? 'heute' : dayLabel(other.date)}, ${other.meal}`;
+  return choosing
+    ? `<div class="choices" id="swapList">
+        <p class="muted">Lieber eins davon? ${esc(mealName(plan, meal))} isst du dann an dessen Tag.</p>
+        ${choices
+          .map(
+            (other) => `
+          <button type="button" class="row go" data-action="swapMeal" data-id="${esc(meal.id)}" data-other="${esc(other.id)}">
+            <span class="grow"><span class="block">${esc(mealName(plan, other))}</span>
+              <span class="meta">Geplant: ${esc(when(other))}${mealNutrition(plan, other) ? ` · ca. ${number(mealNutrition(plan, other).kcal)} kcal` : ''}</span></span>
+          </button>`
+          )
+          .join('')}
+        <button type="button" class="text-button" data-action="swapClose">Doch nicht</button>
+      </div>`
+    : `<button type="button" class="text-button" data-action="swapOpen" id="swapOpen">Anderes Gericht</button>`;
 }
 
 // Yesterday's boxes count as eaten anyway; this asks once, so a box that was not eaten does not count.
@@ -310,7 +334,8 @@ export function todayView() {
             ${next.twist ? `<p class="plain" id="twist">Heute dazu: ${esc(next.twist)}</p>` : ''}
             <p class="plain">${esc(portionLine(mealNutrition(plan, next)))}</p>
             <button type="button" class="primary" data-action="eat" data-id="${esc(next.id)}">Gegessen</button>
-            <button type="button" class="text-button" data-action="skipMeal" data-id="${esc(next.id)}">Heute nicht</button>
+            ${choosing ? '' : `<button type="button" class="text-button" data-action="skipMeal" data-id="${esc(next.id)}">Heute nicht</button>`}
+            ${choiceBlock(plan, next, today)}
             ${
               later.length
                 ? `<div class="later" id="laterMeals">${later
@@ -385,7 +410,26 @@ export const todayActions = {
     removeExtra(localDay(), el.dataset.id);
     rerender();
   },
+  swapOpen: () => {
+    choosing = true;
+    notice = '';
+    rerender();
+  },
+  swapClose: () => {
+    choosing = false;
+    rerender();
+  },
+  swapMeal: (el) => {
+    const result = swap(el.dataset.id, el.dataset.other);
+    choosing = false;
+    const plan = getPlan();
+    notice = result
+      ? `${mealName(plan, result.meal)} gibt es jetzt ${result.meal.date === localDay() ? 'heute' : `am ${dayLabel(result.meal.date)}`} zum ${result.meal.meal}.`
+      : '';
+    rerender();
+  },
   skipMeal: (el) => {
+    choosing = false;
     notice = SKIP_NOTES[skip(el.dataset.id)] ?? '';
     rerender();
   },
@@ -409,6 +453,7 @@ export const todayActions = {
   eat: (el) => {
     eat(el.dataset.id);
     justEaten = el.dataset.id;
+    choosing = false;
     notice = '';
     rerender();
   },

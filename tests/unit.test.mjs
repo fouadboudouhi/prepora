@@ -26,6 +26,8 @@ import {
   shoppingList,
   shoppingNotes,
   skipMeal,
+  swapChoices,
+  swapMeal,
 } from '../src/planner.js';
 import { blockAlarms, planAlarms } from '../src/push.js';
 import { addWeight, mergeWeights, nextAdjustment, weeklyChange } from '../src/trend.js';
@@ -620,6 +622,86 @@ test('"Heute nicht": a thawed box never goes back into the freezer and only move
   const plan = skipPlan({}, { storage: 'freezer' });
   assert.equal(skipMeal(plan, 'm', on).outcome, 'moved');
   assert.equal(skipMeal(plan, 'm', { ...on, today: '2026-11-11' }).outcome, 'expired');
+});
+
+test('"Anderes Gericht": cooked dishes swap places with today, only where both keep', () => {
+  const plan = {
+    people: 1,
+    recipes: [
+      { id: 'a', name: 'Chili', cookDate: '2026-11-08', fridgeDays: 4 },
+      { id: 'b', name: 'Curry', cookDate: '2026-11-08', fridgeDays: 4 },
+      { id: 'c', name: 'Lachs', cookDate: '2026-11-08', fridgeDays: 2 },
+      { id: 'd', name: 'Suppe', cookDate: '2026-11-12', fridgeDays: 4 },
+    ],
+    meals: [
+      { id: 'm1', date: '2026-11-10', meal: 'Mittagessen', recipeId: 'a', storage: 'fridge' },
+      { id: 'm2', date: '2026-11-10', meal: 'Abendessen', recipeId: 'b', storage: 'fridge' },
+      { id: 'm3', date: '2026-11-11', meal: 'Mittagessen', recipeId: 'b', storage: 'fridge' },
+      {
+        id: 'm4',
+        date: '2026-11-10',
+        meal: 'Abendessen',
+        recipeId: 'c',
+        storage: 'fridge',
+        eaten: '2026-11-10',
+      },
+      { id: 'm5', date: '2026-11-13', meal: 'Mittagessen', recipeId: 'd', storage: 'fridge' },
+      {
+        id: 'm6',
+        date: '2026-11-14',
+        meal: 'Mittagessen',
+        recipeId: 'b',
+        storage: 'freezer',
+        thawOn: '2026-11-13',
+      },
+      { id: 'm7', date: '2026-11-13', meal: 'Abendessen', recipeId: 'a', storage: 'fridge' },
+    ],
+    cookDays: [
+      { date: '2026-11-08', done: true },
+      { date: '2026-11-12', done: false },
+    ],
+  };
+  const today = '2026-11-10';
+  // One box per dish, the earliest; not eaten ones, not uncooked, not frozen, not the same dish.
+  assert.deepEqual(
+    swapChoices(plan, 'm1', today).map((meal) => meal.id),
+    ['m2']
+  );
+  const result = swapMeal(plan, 'm1', 'm2', today);
+  assert.equal(result.other.id, 'm2');
+  assert.deepEqual(
+    plan.meals.slice(0, 2).map((meal) => [meal.id, meal.meal]),
+    [
+      ['m2', 'Mittagessen'],
+      ['m1', 'Abendessen'],
+    ],
+    'the list keeps the order of the day'
+  );
+  assert.equal(swapMeal(plan, 'm1', 'm5', today), null, 'not cooked yet');
+
+  // Today's box must keep until the other day: Lachs holds 2 days, so it cannot go to the 11th.
+  plan.meals.push({ id: 'm8', date: '2026-11-10', meal: 'Snack', recipeId: 'c', storage: 'fridge' });
+  assert.deepEqual(
+    swapChoices(plan, 'm8', today).map((meal) => meal.id),
+    ['m2', 'm1']
+  );
+  plan.meals[0].date = '2026-11-11';
+  plan.meals[1].date = '2026-11-11';
+  assert.deepEqual(swapChoices(plan, 'm8', today), []);
+
+  // A thawed box may go to tomorrow once.
+  const thawed = {
+    id: 't',
+    date: today,
+    meal: 'Mittagessen',
+    recipeId: 'a',
+    storage: 'freezer',
+    thawOn: '2026-11-09',
+  };
+  plan.meals.push(thawed);
+  assert.ok(swapMeal(plan, 't', 'm2', today));
+  assert.equal(thawed.date, '2026-11-11');
+  assert.equal(thawed.moved, true);
 });
 
 test('one shop a week: last shop day before cooking, with fillers, staples and supplements', () => {
