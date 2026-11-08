@@ -643,11 +643,18 @@ test('one shop a week: last shop day before cooking, with fillers, staples and s
   };
   const groups = shoppingList(plan, [{ id: 'k', name: 'Kreatin' }]);
   const names = groups.map((group) => group.name);
-  assert.deepEqual(names, ['Kühlregal', 'Vorrat', 'Prüfen, ob da', 'Supplements']);
-  assert.equal(groups[0].items[0].detail, '3 Packungen à 500 g');
-  assert.equal(groups[2].items[0].name, 'Salz');
-  assert.equal(groups[3].items[0].id, 'supplement-k');
-  assert.equal(shoppingCost(plan), Math.round(2 + 4.5 + 2));
+  assert.deepEqual(names, ['Vorrat', 'Prüfen, ob da', 'Supplements', 'Optional']);
+  assert.equal(groups[3].items.find((item) => item.name === 'Skyr').detail, '3 Packungen à 500 g, für Snack');
+  assert.equal(groups[1].items[0].name, 'Salz');
+  assert.equal(groups[2].items[0].id, 'supplement-k');
+  // The price is what the boxes need; fillers are counted apart.
+  assert.equal(shoppingCost(plan), 2);
+  assert.equal(shoppingCost(plan, { optional: true }), Math.round(4.5 + 2));
+  // A twist ingredient is optional too, unless a dish needs the same food anyway.
+  const twist = {
+    recipes: [{ name: 'B', ingredients: [{ ...food('Zitrone (Twist)', 'zitrone', 100), packEuro: 1 }] }],
+  };
+  assert.equal(shoppingList(twist).at(-1).name, 'Optional');
 });
 
 test('the budget goes back to Claude only when it is clearly missed', () => {

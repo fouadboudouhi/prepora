@@ -188,6 +188,7 @@ Regeln:
 - Gegartes Geflügel und Hack müssen durchgegart sein; sage es im Schritt, wo es zählt.
 - Deutsch, kurz und klar. "reheat" ist ein kurzer Satz wie "2 Minuten Mikrowelle".
 - "twists": zwei bis drei kleine Varianten pro Rezept, die beim Aufwärmen in einer Minute aus derselben Box etwas anderes machen, zum Beispiel "Mit Limette und Koriander". Was sie brauchen, steht in "ingredients".
+- Zutaten, die nur ein Twist braucht, bekommen " (Twist)" an den Namen, etwa "Zitrone (Twist)".
 - "fillers": zwei bis drei Bausteine ganz ohne Kochen für den Rest des Tagesziels, zum Beispiel Frühstück oder Snack. "when" ist kurz wie "Frühstück", "servings" die Portionen für die Woche, "ingredients" die Mengen für alle Portionen. Ist keine Lücke genannt, ist die Liste leer.
 - Es wird einmal für den ganzen Plan eingekauft. Frisches Fleisch und frischer Fisch für einen späteren Kochtag müssen bis dahin halten: dann als Tiefkühlware planen oder im Kochablauf ans Auftauen erinnern. Empfindliches Gemüse und Kräuter früh in der Woche verbrauchen.
 - "packEuro": geschätzter Preis einer Packung im deutschen Discounter, bei loser Ware der Preis für diese Menge. Gewürze und Grundvorrat wie Salz, Pfeffer und Öl stehen auch in "ingredients", mit "food" "gewuerze" wenn sie kaum Kalorien haben.
@@ -464,6 +465,7 @@ const amount = (grams) =>
   grams >= 1000 ? `${String(Math.round(grams / 100) / 10).replace('.', ',')} kg` : `${grams} g`;
 const CHECK_GROUP = 'Prüfen, ob da';
 const SUPPLEMENT_GROUP = 'Supplements';
+export const OPTIONAL_GROUP = 'Optional';
 const CATEGORY_ORDER = [
   'Fleisch und Fisch',
   'Kühlregal',
@@ -472,14 +474,21 @@ const CATEGORY_ORDER = [
   'Vorrat',
   CHECK_GROUP,
   SUPPLEMENT_GROUP,
+  OPTIONAL_GROUP,
 ];
+const TWIST = /\(twist\)/i;
 
-// The same food in several dishes is one line in the shop. Fillers count too: everything for the week, in one trip.
+// The same food in several dishes is one line in the shop. Fillers and twists are an offer, not a must: a food
+// only they need is marked optional.
 function mergedIngredients(plan) {
   const items = new Map();
-  const sources = [...(plan.recipes ?? []), ...(plan.fillers ?? [])];
-  for (const source of sources)
+  const sources = [
+    ...(plan.recipes ?? []).map((source) => ({ source, filler: false })),
+    ...(plan.fillers ?? []).map((source) => ({ source, filler: true })),
+  ];
+  for (const { source, filler } of sources)
     for (const item of source.ingredients ?? []) {
+      const extra = filler || TWIST.test(item.name ?? '');
       const key = (item.food && item.food !== 'gewuerze' ? item.food : item.name).toLowerCase();
       const found = items.get(key) ?? {
         id: key,
@@ -489,12 +498,20 @@ function mergedIngredients(plan) {
         pack: item.packGrams || 0,
         packEuro: item.packEuro || 0,
         loose: 0,
+        must: false,
+        uses: new Set(),
       };
+      if (extra) found.uses.add(filler ? source.when || 'Snack' : 'Twist');
+      else found.must = true;
       found.grams += item.grams || 0;
       if (!found.pack) found.loose += item.packEuro || 0;
       items.set(key, found);
     }
-  return [...items.values()];
+  return [...items.values()].map(({ must, uses, ...item }) => ({
+    ...item,
+    optional: !must && item.category !== CHECK_GROUP,
+    uses: [...uses],
+  }));
 }
 
 // What is at home already counts: it comes off before packs are counted.
@@ -522,9 +539,15 @@ export function shoppingList(plan, supplements = []) {
         : packs
           ? `${PACK_WORD(packs)} à ${amount(item.pack)}${have ? `, ${amount(have)} hast du noch` : ''}`
           : amount(need);
-    const category = !item.grams ? CHECK_GROUP : (item.category ?? 'Vorrat');
+    const category = item.optional ? OPTIONAL_GROUP : !item.grams ? CHECK_GROUP : (item.category ?? 'Vorrat');
     if (!groups.has(category)) groups.set(category, []);
-    groups.get(category).push({ id: item.id, name: item.name, detail, left });
+    groups.get(category).push({
+      id: item.id,
+      name: item.name,
+      detail: item.optional ? `${detail}, für ${item.uses.join(' und ')}` : detail,
+      left,
+      optional: item.optional,
+    });
   }
   if (supplements.length)
     groups.set(
@@ -586,8 +609,10 @@ export const stillGood = (entry, today) =>
   dayNumber(today) - dayNumber(entry.since) <= (isPerishable(entry) ? FRESH_DAYS : SHELF_DAYS);
 
 // A rough sum from Claude's guessed prices, never a promise: supermarkets do not publish theirs.
-export function shoppingCost(plan) {
+// Optional things are counted apart, so the price says what the boxes cost.
+export function shoppingCost(plan, { optional = false } = {}) {
   const total = mergedIngredients(plan).reduce((sum, item) => {
+    if (item.optional !== optional) return sum;
     if (!item.pack) return sum + item.loose;
     return sum + packsFor(item, haveOf(plan, item.id)).packs * item.packEuro;
   }, 0);

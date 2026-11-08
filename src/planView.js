@@ -287,6 +287,18 @@ export function planView() {
         ? `<p class="note" id="freezerNote">${icon('snow')} kommt aus dem Tiefkühler. Am Vorabend in den Kühlschrank legen, die App erinnert dich.</p>`
         : ''
     }
+    ${
+      plan.fillers?.length
+        ? `<h2 class="section">Dazu, wenn du magst</h2>
+           <p class="sub">Ohne Kochen, für den Rest deines Tagesziels. Steht auf der Einkaufsliste unter Optional.</p>
+           <div class="list" id="fillerList">${plan.fillers
+             .map(
+               (filler) =>
+                 `<div class="row"><span class="grow"><span class="block">${esc(filler.name)}</span><span class="muted small">${esc(filler.when ?? '')}${filler.nutrition?.kcal ? `, ca. ${number(filler.nutrition.kcal)} kcal` : ''}</span></span></div>`
+             )
+             .join('')}</div>`
+        : ''
+    }
     <h2 class="section">Gerichte</h2>
     <div class="list" id="recipeList">
       ${plan.recipes

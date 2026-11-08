@@ -685,6 +685,7 @@ test('from one tap to a week: plan, list, cook day, boxes, freezer, eating, rati
     stored.meals.filter((meal) => meal.id.startsWith('1-')).every((meal) => meal.storage === 'fridge')
   );
   assert.match(await page.locator('#recipeList').innerText(), /teils geschätzt/);
+  assert.match(await page.locator('#fillerList').innerText(), /Skyr mit Haferflocken[\s\S]*Frühstück/);
 
   await page.click('[data-tab="shop"]');
   const list = (await page.locator('.check').allInnerTexts()).join('\n');
@@ -693,6 +694,11 @@ test('from one tap to a week: plan, list, cook day, boxes, freezer, eating, rati
   const first = await page.locator('.check .block').first().innerText();
   await page.locator('.check').first().click();
   assert.match(await page.locator('#shopCount').innerText(), /von/);
+  // Fillers are an offer: their own group at the end, not counted as open.
+  assert.match(await page.locator('#optionalList').innerText(), /Skyr[\s\S]*für Frühstück/);
+  const total = await page.locator('.check').count();
+  const optional = await page.locator('#optionalList .check').count();
+  assert.match(await page.locator('#shopCount').innerText(), new RegExp(`von ${total - optional} offen`));
   // What is in the cart moves down, out of the way.
   assert.equal(await page.locator('#inCart .check .block').innerText(), first);
   assert.equal(await page.locator('#inCart .check').getAttribute('aria-pressed'), 'true');

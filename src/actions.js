@@ -105,7 +105,7 @@ export function changePantry(changes = [], today = localDay()) {
 export function shopDone(plan) {
   const checked = read('shop', {});
   const items = shoppingList(plan).flatMap((group) => group.items);
-  return items.every((item) => checked[item.id]);
+  return items.filter((item) => !item.optional).every((item) => checked[item.id]);
 }
 
 // Older plans go. What was eaten from them stays in the day's numbers, as plain entries.
