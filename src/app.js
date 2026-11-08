@@ -1,4 +1,4 @@
-// The shell: sign-in with the Volumora account, four tabs, and the full-screen cook day above them.
+// The shell: sign-in or a new account with an invite, four tabs, and the full-screen cook day above them.
 import { applyTrend, getPantry, getPlan, getStock, settleShopping, updateBlocks } from './actions.js';
 import { chatActions, drawChat, keepDraft, send, watchKeyboard } from './chatView.js';
 import { askHelper, cookActions, cookView, cooking, startTicking } from './cookView.js';
@@ -8,7 +8,7 @@ import { saveFromForm, profileActions, profileView, showTargets } from './profil
 import { importRecipe, importRecipePhoto, recipeActions, recipesView } from './recipesView.js';
 import { icon } from './icons.js';
 import { pushOn } from './push.js';
-import { getSession, refreshMe, signIn, signOut } from './session.js';
+import { createInvite, getSession, refreshMe, register, signIn, signOut } from './session.js';
 import { shopActions, shopView } from './shopView.js';
 import { addStock, plannedOf, stockActions, stockView } from './stockView.js';
 import { addSupplement, supplementActions, supplementsView } from './supplementsView.js';
@@ -52,6 +52,27 @@ const SUB_VIEWS = {
 // Screens that belong to Heute keep it lit; the rest open from Mehr.
 const UNDER_TODAY = ['photo', 'week', 'scan'];
 const ACTIONS = {
+  createInvite: async () => {
+    Object.assign(inviting, { busy: true, error: '' });
+    redrawKeepingPlace();
+    try {
+      inviting.code = await createInvite();
+    } catch (err) {
+      inviting.error = errorText(err);
+    }
+    inviting.busy = false;
+    redrawKeepingPlace();
+  },
+  shareInvite: async () => {
+    const link = inviteLink(inviting.code);
+    const text = `Dein Zugang zu Prepora: ${link}`;
+    try {
+      if (navigator.share) await navigator.share({ title: 'Prepora', text, url: link });
+      else await navigator.clipboard.writeText(link);
+    } catch {
+      // Closed without sharing.
+    }
+  },
   rateHabits: () => {
     open('chat');
     send('Bewerte meine Essgewohnheiten der letzten zwei Wochen.');
@@ -141,6 +162,26 @@ function aiLine(ai) {
   return `${money(ai.used)} von ${money(ai.budget)} diesen Monat`;
 }
 
+// The admin hands out invites from here, so nobody needs Volumora to join.
+const inviting = { busy: false, code: '', error: '' };
+const inviteLink = (code) => `${location.origin}${location.pathname}?invite=${encodeURIComponent(code)}`;
+function inviteBlock() {
+  return `
+    <h2 class="section">Einladen</h2>
+    <div class="list" id="invite">
+      ${
+        inviting.code
+          ? `<div class="row"><span class="grow"><span class="block">Code <strong id="inviteCode">${esc(inviting.code)}</strong></span><span class="muted small">Gilt einmal. Mit dem Link ist der Code schon eingetragen.</span></span>
+             <button type="button" class="text-button" data-action="shareInvite">Teilen</button></div>`
+          : ''
+      }
+      <button type="button" class="row go" data-action="createInvite" id="createInvite"${inviting.busy ? ' disabled' : ''}>
+        <span class="grow"><span class="block">${inviting.code ? 'Noch eine Einladung' : 'Einladung erstellen'}</span><span class="muted small">Für ein eigenes Prepora-Konto</span></span>
+      </button>
+    </div>
+    ${inviting.error ? `<p class="error" role="alert">${esc(inviting.error)}</p>` : ''}`;
+}
+
 function moreView() {
   const session = getSession();
   return `
@@ -158,6 +199,7 @@ function moreView() {
       <div class="row"><span>Claude</span><span class="muted" id="aiLine">${esc(aiLine(session.ai))}</span></div>
       <div class="row"><span>Erinnerungen</span><span class="muted" id="pushLine">${pushOn() ? 'An' : 'Ab dem ersten Kochtag'}</span></div>
     </div>
+    ${session.admin ? inviteBlock() : ''}
     <button type="button" class="secondary" id="signOut">Abmelden</button>`;
 }
 
@@ -234,24 +276,41 @@ function open(id) {
   navigate(direction, update);
 }
 
-function showGate() {
+// An invite link opens straight on the new account, with the code filled in.
+const invited = () => new URLSearchParams(location.search).get('invite') ?? '';
+function showGate(mode = invited() ? 'register' : 'signIn') {
+  const fresh = mode === 'register';
   app.innerHTML = `
     <main class="page gate">
       <img class="gate-icon" src="assets/icons/icon-192.png" alt="" width="64" height="64">
       <h1>Prepora</h1>
-      <p>Melde dich mit deinem Volumora-Konto an.</p>
-      <form id="signIn" novalidate>
+      <p>${fresh ? 'Neues Konto mit deinem Einladungscode.' : 'Melde dich an.'}</p>
+      <form id="${fresh ? 'register' : 'signIn'}" novalidate>
         <label>Benutzername
           <input id="username" type="text" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="32" required>
         </label>
         <label>Passwort
-          <input id="password" type="password" name="password" autocomplete="current-password" required>
+          <input id="password" type="password" name="password" autocomplete="${fresh ? 'new-password' : 'current-password'}" required>
         </label>
+        ${
+          fresh
+            ? `<label>Einladungscode
+                 <input id="inviteInput" type="text" name="invite" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="64" value="${esc(invited())}" required>
+               </label>`
+            : ''
+        }
         <p class="error" id="signInError" role="alert" hidden></p>
-        <button type="submit" class="primary" id="signInButton">Anmelden</button>
+        <button type="submit" class="primary" id="signInButton">${fresh ? 'Konto erstellen' : 'Anmelden'}</button>
       </form>
-      <p class="note">Noch kein Konto? <a href="../volumora/">Mit Einladung in Volumora registrieren</a></p>
+      <p class="note">${
+        fresh
+          ? 'Schon ein Konto? <button type="button" class="link" id="gateSignIn">Anmelden</button>'
+          : 'Noch kein Konto? <button type="button" class="link" id="gateRegister">Mit Einladungscode erstellen</button>'
+      }</p>
+      <p class="note small">Ein Volumora-Konto funktioniert hier auch.</p>
     </main>`;
+  document.getElementById('gateSignIn')?.addEventListener('click', () => showGate('signIn'));
+  document.getElementById('gateRegister')?.addEventListener('click', () => showGate('register'));
 }
 
 // What the server knows comes in the background. Nothing here waits for it, and without a connection nothing changes.
@@ -286,36 +345,40 @@ watchScroll();
 watchKeyboard();
 setOpener(open);
 
+async function enter(how) {
+  const error = document.getElementById('signInError');
+  const button = document.getElementById('signInButton');
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const invite = document.getElementById('inviteInput')?.value.trim();
+  if (!username || !password || invite === '') {
+    error.textContent = invite === '' ? 'Bitte alles ausfüllen.' : 'Bitte beides ausfüllen.';
+    error.hidden = false;
+    return;
+  }
+  button.disabled = true;
+  error.hidden = true;
+  try {
+    await how(username, password, invite);
+    if (invited()) history.replaceState(null, '', location.pathname);
+    start();
+    // In the background the camera goes off; back on the scanner it comes on again.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') stopScanner();
+      else if (current === 'scan') startScanner();
+    });
+  } catch (err) {
+    error.textContent = errorText(err);
+    error.hidden = false;
+    button.disabled = false;
+  }
+}
+
 const FORMS = {
   pantryAdd: addPantry,
   fridgeAdd: addFridgeItem,
-  async signIn() {
-    const error = document.getElementById('signInError');
-    const button = document.getElementById('signInButton');
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value;
-    if (!username || !password) {
-      error.textContent = 'Bitte beides ausfüllen.';
-      error.hidden = false;
-      return;
-    }
-    button.disabled = true;
-    error.hidden = true;
-    try {
-      await signIn(username, password);
-      start();
-
-      // In the background the camera goes off; back on the scanner it comes on again.
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') stopScanner();
-        else if (current === 'scan') startScanner();
-      });
-    } catch (err) {
-      error.textContent = errorText(err);
-      error.hidden = false;
-      button.disabled = false;
-    }
-  },
+  register: () => enter(register),
+  signIn: () => enter(signIn),
   stockAdd(form) {
     const name = form.elements.name.value;
     form.elements.name.value = '';
