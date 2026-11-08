@@ -38,12 +38,23 @@ const food = (name, id, grams, category, packGrams, packEuro, per100 = [0, 0, 0,
 });
 
 const oil = () => food('Olivenöl', 'olivenoel', 40, 'Vorrat', 500, 4.5);
-const step = (recipeId, title, detail, timerMinutes = 0, timerName = '') => ({
+// One step the way Claude writes it: one action, the amounts that go in, how to tell it is done, a timer if it waits.
+const step = (
   recipeId,
   title,
   detail,
+  uses = [],
+  doneWhen = '',
+  [timerMinutes, timerName, timerThen] = [0, '', '']
+) => ({
+  recipeId,
+  title,
+  detail,
+  uses: uses.map(([amount, name]) => ({ name, amount })),
+  doneWhen,
   timerMinutes,
   timerName,
+  timerThen,
 });
 
 // Two cook days, three dishes each: Sunday for the start of the week, Wednesday for the rest.
@@ -215,59 +226,161 @@ function plan(request) {
         ? {
             date: group.date,
             minutes: 90,
+            equipment: [
+              'Große Pfanne',
+              'Großer Topf mit Deckel',
+              'Zwei mittlere Töpfe mit Deckel',
+              'Schneidebrett und scharfes Messer',
+              'Boxen mit Deckel',
+            ],
             steps: [
-              step('', 'Alles bereitlegen', 'Zwiebeln, Paprika, Zucchini und Brokkoli schneiden.'),
+              step(
+                '',
+                'Gemüse schneiden',
+                'Zwiebeln und Paprika in 1 cm große Würfel, Zucchini in halbe Scheiben, Brokkoli in kleine Röschen.',
+                [
+                  ['190 g (2 Stück)', 'Zwiebeln'],
+                  ['220 g (1–2 Stück)', 'Paprika'],
+                  ['300 g (1 Stück)', 'Zucchini'],
+                  ['380 g (1 Kopf)', 'Brokkoli'],
+                ]
+              ),
               step(
                 'chili',
-                'Chili ansetzen',
-                'Hack krümelig anbraten, Zwiebeln und Paprika dazu, Tomaten und Bohnen einrühren.',
-                35,
-                'Chili'
+                'Hack anbraten',
+                'Öl in der großen Pfanne auf hoher Hitze (Stufe 7 von 9) heiß werden lassen. Hack hinein und 6–8 Min. braten, dabei mit dem Pfannenwender zerdrücken.',
+                [
+                  ['20 g (2 EL)', 'Olivenöl'],
+                  ['560 g', 'Rinderhack mager'],
+                ],
+                'Nichts mehr rosa, alles krümelig und leicht braun'
               ),
-              step('curry', 'Reis aufsetzen', 'Reis und Basmati in zwei Töpfen kochen.', 15, 'Reis'),
+              step(
+                'chili',
+                'Gemüse dazu',
+                'Zwiebeln und Paprika in die Pfanne, 4 Min. mitbraten und ab und zu umrühren.',
+                [
+                  ['190 g', 'Zwiebeln'],
+                  ['220 g', 'Paprika'],
+                ],
+                'Zwiebeln glasig'
+              ),
+              step(
+                'chili',
+                'Chili köcheln lassen',
+                'Tomaten, abgespülte Bohnen und Mais einrühren, aufkochen, dann auf kleine Hitze (Stufe 3) schalten. Timer starten.',
+                [
+                  ['600 g (1½ Dosen)', 'Gehackte Tomaten'],
+                  ['600 g (1½ Dosen)', 'Kidneybohnen'],
+                  ['210 g (1 Dose)', 'Mais'],
+                ],
+                '',
+                [25, 'Chili', 'Umrühren, mit Salz und Pfeffer abschmecken, Herd aus']
+              ),
               step(
                 'curry',
-                'Curry kochen',
-                'Hähnchen anbraten, Currypaste und Kokosmilch dazu, Brokkoli in den letzten 6 Minuten.',
-                20,
-                'Curry'
+                'Reis aufsetzen',
+                'Beide Reissorten in je einen Topf mit der doppelten Menge Wasser und 1 TL Salz. Aufkochen, Deckel drauf, kleine Hitze. Timer starten.',
+                [
+                  ['640 g', 'Reis'],
+                  ['640 g', 'Basmatireis'],
+                ],
+                '',
+                [12, 'Reis', 'Herd aus, Deckel drauf lassen, 5 Min. ziehen lassen']
+              ),
+              step(
+                'curry',
+                'Hähnchen anbraten',
+                'Hähnchen in 2 cm große Würfel schneiden und im großen Topf mit 1 EL Öl auf mittlerer bis hoher Hitze 5 Min. rundum anbraten.',
+                [
+                  ['680 g', 'Hähnchenbrust'],
+                  ['10 g (1 EL)', 'Olivenöl'],
+                ],
+                'Außen rundum weiß'
+              ),
+              step(
+                'curry',
+                'Curry köcheln',
+                'Currypaste kurz mitrösten, dann Kokosmilch dazu und auf kleiner Hitze köcheln. Timer starten.',
+                [
+                  ['30 g (2 EL)', 'Currypaste'],
+                  ['300 g (¾ Dose)', 'Kokosmilch light'],
+                ],
+                '',
+                [8, 'Curry', 'Brokkoli dazugeben und den nächsten Timer starten']
+              ),
+              step(
+                'curry',
+                'Brokkoli ins Curry',
+                'Brokkoli unterrühren, Deckel drauf. Timer starten.',
+                [['380 g', 'Brokkoli']],
+                'Hähnchen innen nicht mehr rosa',
+                [6, 'Brokkoli', 'Herd aus']
               ),
               step(
                 'pasta',
-                'Pasta kochen',
-                'Nudeln bissfest, Pute und Zucchini in der Pfanne, alles mischen, Feta darüber.',
-                10,
-                'Nudeln'
+                'Nudeln kochen',
+                'Wasser im zweiten Topf mit 1 EL Salz aufkochen, Nudeln hinein. Timer starten.',
+                [['520 g', 'Vollkornnudeln']],
+                '',
+                [9, 'Nudeln', 'Abgießen, 1 Tasse Nudelwasser aufheben']
               ),
-              step('', 'Portionieren', 'In Boxen abkühlen lassen und beschriften.'),
+              step(
+                'pasta',
+                'Pute und Zucchini braten',
+                'Pute in Streifen schneiden, in der ausgewischten Pfanne mit 1 EL Öl 5 Min. braten, Zucchini und halbierte Tomaten 3 Min. mitbraten.',
+                [
+                  ['490 g', 'Putenbrust'],
+                  ['300 g', 'Zucchini'],
+                  ['220 g', 'Kirschtomaten'],
+                  ['10 g (1 EL)', 'Olivenöl'],
+                ],
+                'Pute innen weiß, durchgegart'
+              ),
+              step(
+                'pasta',
+                'Pasta mischen',
+                'Nudeln in die Pfanne, mit etwas Nudelwasser mischen, Feta darüberbröseln.',
+                [['150 g', 'Feta']]
+              ),
+              step(
+                '',
+                'Portionieren',
+                'Alles auf die Boxen verteilen und offen 30–60 Min. abkühlen lassen, dann Deckel drauf.',
+                [],
+                'Nicht mehr warm, wenn du die Box anfasst'
+              ),
             ],
           }
         : {
             date: group.date,
             minutes: 75,
+            equipment: ['Backblech mit Backpapier', 'Großer Topf mit Deckel', 'Große Pfanne', 'Boxen'],
             steps: [
+              step('', 'Ofen vorheizen', 'Ofen auf 200 °C Ober- und Unterhitze stellen.'),
               step(
                 'bowl',
                 'Süßkartoffeln in den Ofen',
-                'Würfeln, mit Öl und Paprika mischen, bei 200 °C rösten.',
-                30,
-                'Ofen'
+                'Süßkartoffeln in 2 cm große Würfel schneiden, mit Öl und Paprikapulver aufs Blech, in die Mitte des Ofens. Timer starten.',
+                [],
+                'Mit der Gabel ganz weich',
+                [30, 'Ofen', 'Blech raus, kurz abkühlen lassen']
               ),
               step(
                 'dal',
                 'Dal ansetzen',
-                'Linsen mit Tomaten und Kokosmilch köcheln, Spinat am Ende unterrühren.',
-                20,
-                'Dal'
+                'Linsen abspülen, mit Tomaten und Kokosmilch in den großen Topf, aufkochen, dann kleine Hitze. Timer starten.',
+                [],
+                '',
+                [20, 'Dal', 'Spinat unterrühren, Herd aus']
               ),
               step(
                 'teriyaki',
                 'Teriyaki braten',
-                'Hähnchen anbraten, Sojasauce und Honig einkochen, Sesam darüber.',
-                12,
-                'Teriyaki'
+                'Hähnchen in Stücke schneiden, in der Pfanne 8 Min. braten, Sojasauce und Honig dazu und 2 Min. einkochen.',
+                [],
+                'Sauce glänzt, Hähnchen durchgegart'
               ),
-              step('bowl', 'Hack und Kichererbsen', 'Krümelig braten, Kichererbsen mitrösten.', 8, 'Pfanne'),
               step('', 'Portionieren', 'In Boxen abkühlen lassen, die letzten Tage in den Tiefkühler.'),
             ],
           }
@@ -336,6 +449,10 @@ const DEMO_TEXT =
   'Das ist die Demo: Hier antworte ich mit vorbereiteten Texten. In der App kann ich deinen Plan ändern, ' +
   'Gerichte tauschen, dein Profil anpassen und Fragen beim Kochen beantworten.';
 
+const COOK_TEXT =
+  'Das ist die Demo, hier antworte ich vorbereitet. In der App kenne ich beim Kochen alle Gerichte, Mengen, Schritte ' +
+  'und laufenden Timer, sage dir, was als Nächstes kommt, und passe den Ablauf an, wenn etwas fehlt oder schiefgeht.';
+
 const sse = (events) => events.map((event) => `data: ${JSON.stringify(event)}`).join('\n') + '\n';
 const textStream = (text) =>
   sse([
@@ -347,6 +464,7 @@ const textStream = (text) =>
   ]);
 
 function claude(asked) {
+  if (asked.tools?.some((tool) => tool.name === 'go_to_step')) return textStream(COOK_TEXT);
   if (asked.tools?.length) return textStream(DEMO_TEXT);
   const required = asked.output_config?.format?.schema?.required ?? [];
   if (required.includes('assignments')) return textStream(JSON.stringify(plan(asked)));

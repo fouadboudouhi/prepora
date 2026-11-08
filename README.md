@@ -1,6 +1,6 @@
 # Prepora
 
-Einmal kochen, die ganze Woche essen. Prepora ist eine installierbare Web-App (PWA), die dir für dein Ziel einen Wochenplan für ein bis zwei Kochtage erstellt, die Einkaufsliste rechnet und dich mit Timern durch den Kochtag führt.
+Einmal kochen, die ganze Woche essen. Prepora ist eine installierbare Web-App (PWA), die dir für dein Ziel einen Wochenplan für ein bis zwei Kochtage erstellt, die Einkaufsliste rechnet und dich durch den Kochtag führt: mit Übersicht, Mengen in jedem Schritt, Timern und Claude, der in der Küche mitdenkt.
 
 Live: https://fouad-boudouhi.de/prepora/
 

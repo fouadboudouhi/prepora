@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { kept } from '../src/agent.js';
+import { finishCookDay, handyAmount, nextOpen, readySession, sortedTimers } from '../src/cookDay.js';
 import { entryFromProduct, lookupProduct, productFrom, validCode } from '../src/barcode.js';
 import { calendarText } from '../src/calendar.js';
 import { dayIntake, entryFrom, recentFoods, weekIntake } from '../src/foodLog.js';
@@ -938,4 +939,40 @@ test('a box of a day that is over counts as eaten, unless it was marked as not e
   assert.equal(past.total.kcal, 600);
   assert.equal(past.entries[0].assumed, true);
   assert.equal(dayIntake('2026-11-06', [plan], {}, '2026-11-06').total.kcal, 0);
+});
+
+test('cook day: "Weiter" goes to the next open step, then back to one left open, then to the boxes', () => {
+  const day = { steps: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] };
+  assert.equal(nextOpen(day, ['a'], 'a'), 'b');
+  assert.equal(nextOpen(day, ['b', 'c'], 'c'), 'a');
+  assert.equal(nextOpen(day, ['a', 'b', 'c'], 'b'), null);
+});
+
+test('cook day: an old session keeps its place, small amounts read in spoons, timers by what ends first', () => {
+  const day = { steps: [{ id: 's1' }, { id: 's2' }, { id: 's3' }] };
+  const ready = readySession({ date: 'd', step: 2, timers: [{ id: 't', name: 'Reis', endAt: 5 }] }, day);
+  assert.equal(ready.at, 's3');
+  assert.deepEqual(ready.done, ['s1', 's2']);
+  assert.equal(ready.phase, 'steps');
+  assert.equal(readySession({ date: 'd', step: 3, timers: [] }, day).phase, 'labels');
+  assert.equal(handyAmount('Olivenöl', 30), '30 g (ca. 3 EL)');
+  assert.equal(handyAmount('Salz', 6), '6 g (ca. 1,5 TL)');
+  assert.equal(handyAmount('Rinderhack', 420), '420 g');
+  assert.deepEqual(
+    sortedTimers([{ endAt: 9 }, { endAt: 3 }]).map((timer) => timer.endAt),
+    [3, 9]
+  );
+});
+
+test('cook day: rewritten steps get fresh ids, an empty answer changes nothing', () => {
+  const day = { date: 'd', minutes: 60, steps: [{ id: 's1', title: 'x' }] };
+  assert.equal(finishCookDay({ steps: [{ title: ' ' }] }, day), null);
+  const better = finishCookDay(
+    { minutes: 75, equipment: ['Topf'], steps: [{ title: 'Eins' }, { title: 'Zwei' }] },
+    day
+  );
+  assert.equal(better.minutes, 75);
+  assert.deepEqual(better.equipment, ['Topf']);
+  assert.equal(new Set(better.steps.map((step) => step.id)).size, 2);
+  assert.ok(better.steps.every((step) => step.id !== 's1'));
 });

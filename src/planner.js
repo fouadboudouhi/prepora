@@ -95,6 +95,46 @@ export const ingredientSchema = {
     },
   },
 };
+// One cook day: what it takes, and one step per action, with the amounts that go in at that moment.
+const stepSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['recipeId', 'title', 'detail', 'uses', 'doneWhen', 'timerMinutes', 'timerName', 'timerThen'],
+  properties: {
+    recipeId: { type: 'string' },
+    title: { type: 'string' },
+    detail: { type: 'string' },
+    uses: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'amount'],
+        properties: { name: { type: 'string' }, amount: { type: 'string' } },
+      },
+    },
+    doneWhen: { type: 'string' },
+    timerMinutes: { type: 'integer' },
+    timerName: { type: 'string' },
+    timerThen: { type: 'string' },
+  },
+};
+export const COOK_DAY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['minutes', 'equipment', 'steps'],
+  properties: {
+    minutes: { type: 'integer' },
+    equipment: { type: 'array', items: { type: 'string' } },
+    steps: { type: 'array', items: stepSchema },
+  },
+};
+const cookDaySchema = {
+  ...COOK_DAY_SCHEMA,
+  required: ['date', ...COOK_DAY_SCHEMA.required],
+  properties: { date: { type: 'string' }, ...COOK_DAY_SCHEMA.properties },
+};
+
 export const PLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -142,50 +182,34 @@ export const PLAN_SCHEMA = {
         properties: { slot: { type: 'string' }, recipeId: { type: 'string' } },
       },
     },
-    cookDays: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['date', 'minutes', 'steps'],
-        properties: {
-          date: { type: 'string' },
-          minutes: { type: 'integer' },
-          steps: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['recipeId', 'title', 'detail', 'timerMinutes', 'timerName'],
-              properties: {
-                recipeId: { type: 'string' },
-                title: { type: 'string' },
-                detail: { type: 'string' },
-                timerMinutes: { type: 'integer' },
-                timerName: { type: 'string' },
-              },
-            },
-          },
-        },
-      },
-    },
+    cookDays: { type: 'array', items: cookDaySchema },
   },
 };
+
+// How a cook day reads, for someone who does not cook often. Used for new plans and when Claude rewrites the steps.
+export const STEP_RULES = `Kochablauf ("cookDays"), geschrieben für jemanden, der selten kocht:
+- Eine gemeinsame Zeitleiste über alle Rezepte des Tages: Wartezeiten für Paralleles nutzen, realistisch für die angegebene Zeit und die vorhandenen Geräte.
+- "equipment": was bereitstehen muss, konkret mit Größe, etwa "Große Pfanne", "Topf mit Deckel (3 l)", "Backblech mit Backpapier", "Schneidebrett und scharfes Messer".
+- Ein Schritt ist ein Arbeitsgang, höchstens zwei kurze Sätze. Lieber mehr kleine Schritte als einen langen.
+- "detail" nennt Menge, Gefäß, Hitze und Zeit, zum Beispiel "420 g Hack in die große Pfanne, mittlere bis hohe Hitze (Stufe 7 von 9), 6–8 Min. braten und dabei zerdrücken." Beim Schneiden die Größe, etwa "in 1 cm große Würfel".
+- "uses": genau die Zutaten, die in diesem Schritt dazukommen, mit Menge so, wie man sie abmisst: "420 g", "2 EL", "1 TL", "2 Stück (ca. 300 g)", "1 Dose (400 g)". Die Mengen passen zu "grams" und gelten für alle Portionen. Ohne Zutaten leer.
+- "doneWhen": woran man erkennt, dass der Schritt fertig ist, etwa "Nichts mehr rosa, Saft klar". Sonst leer. Bei Geflügel und Hack immer: durchgegart.
+- Timer nur für Unbeaufsichtigtes wie Köcheln, Backen oder Quellen. "timerMinutes" ist die Dauer ab dem Moment, in dem das Warten beginnt; "detail" endet dann mit "Timer starten." "timerName" ist ein kurzes Wort wie "Reis", "timerThen" sagt, was zu tun ist, wenn er klingelt, etwa "Herd aus, Deckel drauf, 5 Min. ziehen lassen". Ohne Timer: 0 und leer.
+- Soll mitten in einer Garzeit etwas dazu, teile die Zeit in zwei Schritte mit je eigenem Timer.
+- Der Schritt nach einem Timer ist etwas, das man in der Wartezeit erledigt.
+- "recipeId" eines Schritts ist das Rezept, um das es geht, oder leer bei Vorbereitung und Portionieren.
+- Der letzte Schritt ist das Portionieren in Boxen und Abkühlen, mit der Zahl der Boxen pro Gericht.`;
 
 export const PLAN_SYSTEM = `Du planst Foodprep für einen frei gewählten Zeitraum: so viele Tage und Kochtage, wie die Person sagt.
 
 Regeln:
 - Baukasten statt fünfmal dasselbe: wenige Proteine, Beilagen und Saucen, die sich unterschiedlich kombinieren. Wiederhole ein Gericht höchstens dreimal hintereinander.
-- Der Kochtag hat eine gemeinsame Zeitleiste über alle Rezepte: Parallel Laufendes nutzen, Timer für alles Unbeaufsichtigte, realistisch für die angegebene Zeit und die vorhandenen Geräte.
-- Mengen in "grams" sind die Rohgewichte für alle Portionen dieses Rezepts zusammen. Schritte nennen keine Mengen, nur Temperaturen und Zeiten.
+- Mengen in "grams" sind die Rohgewichte für alle Portionen dieses Rezepts zusammen.
+${STEP_RULES}
 - "food" ist genau eine Kennung aus der Liste. Passt keine, ist "food" leer und "per100" enthält deine Schätzung pro 100 g; sonst sind in "per100" alle Werte 0.
 - "packGrams" ist die übliche Packungsgröße im deutschen Supermarkt in Gramm, 0 bei loser Ware. Plane so, dass Packungen aufgebraucht werden.
 - "fridgeDays": wie viele Tage das gekochte Gericht im Kühlschrank sicher hält, höchstens ${FRIDGE_DAYS}, bei Fisch höchstens 2. "freezes": ob es sich zum Einfrieren eignet.
 - Jede Mahlzeit in "assignments" bekommt genau ein Rezept. Rezepte, die länger stehen müssten, als sie halten, müssen einfrierbar sein, sofern ein Tiefkühler da ist.
-- Wenn du einen Schritt mit Timer planst, ist "timerMinutes" die Dauer und "timerName" ein kurzes Wort wie "Reis"; sonst 0 und leer.
-- Der letzte Schritt jedes Kochtags ist das Portionieren in Boxen und Abkühlen.
-- "recipeId" eines Schritts ist das Rezept, um das es geht, oder leer bei Vorbereitung und Portionieren.
-- Gegartes Geflügel und Hack müssen durchgegart sein; sage es im Schritt, wo es zählt.
 - Deutsch, kurz und klar. "reheat" ist ein kurzer Satz wie "2 Minuten Mikrowelle".
 - "twists": zwei bis drei kleine Varianten pro Rezept, die beim Aufwärmen in einer Minute aus derselben Box etwas anderes machen, zum Beispiel "Mit Limette und Koriander". Was sie brauchen, steht in "ingredients".
 - Zutaten, die nur ein Twist braucht, bekommen " (Twist)" an den Namen, etwa "Zitrone (Twist)".
@@ -388,7 +412,8 @@ export function finishPlan(answer, { profile, slots, start, stock = [], pantry =
   const steps = (answer.cookDays ?? []).map((day) => ({
     date: dates.includes(day.date) ? day.date : dates[0],
     minutes: day.minutes,
-    steps: day.steps,
+    equipment: day.equipment ?? [],
+    steps: withIds(day.steps ?? []),
   }));
   if (!steps.length || steps.some((day) => !day.steps?.length))
     problems.push('Ein Kochtag hat keine Schritte.');
@@ -618,6 +643,10 @@ export function shoppingCost(plan, { optional = false } = {}) {
   }, 0);
   return Math.round(total);
 }
+
+// Every step keeps one id, so going back, jumping and Claude's changes never mix steps up.
+export const withIds = (steps, prefix = 's') =>
+  steps.map((step, index) => (step.id ? step : { ...step, id: `${prefix}${index + 1}` }));
 
 export const recipeOf = (plan, id) => plan?.recipes?.find((recipe) => recipe.id === id) ?? null;
 export const mealName = (plan, meal) => meal.stock?.name ?? recipeOf(plan, meal.recipeId)?.name ?? '';
