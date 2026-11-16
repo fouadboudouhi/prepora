@@ -920,6 +920,77 @@ test('swapping a dish changes the running plan: eaten, rated and cooked stays, p
   });
 });
 
+test('swapping a dish keeps the shop: ticks stay, what is missing is on the list, nothing is booked twice', async () => {
+  const open = (shoppingListOf, checked) =>
+    shoppingListOf
+      .flatMap((group) => group.items)
+      .filter((item) => !checked[item.id])
+      .map((item) => [item.id, item.detail]);
+
+  // After the shop: everything was bought, the leftovers are at home already.
+  const after = await midWeek();
+  await withApp([after.answer], async () => {
+    const { read, write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    const home = [
+      { id: 'rinderhack', name: 'Hack', grams: 100, category: 'Vorrat', since: after.day(-4) },
+      { id: 'reis', name: 'Reis', grams: 50, category: 'Vorrat', since: after.day(-4) },
+    ];
+    write('profile', after.person);
+    write('plan', after.plan);
+    write('pantry', home);
+    write('shop', { rinderhack: true, reis: true });
+
+    await actions.replaceRecipe('b');
+    assert.equal(actions.planning.error, null);
+    const plan = actions.getPlan();
+    assert.equal(plan.settled, true);
+    assert.deepEqual(actions.getHistory(), []);
+    // Reis: 200 g less than bought, so at home now. Hack: 300 g more, 100 g come from home, 200 g are to buy.
+    assert.deepEqual(open(shoppingList(plan), read('shop', {})), [
+      ['rinderhack', '200 g'],
+      ['nudeln', '400 g'],
+    ]);
+    assert.equal(read('shop', {}).reis, true, 'a line that is bought stays ticked');
+    const pantry = actions.getPantry().map(({ id, grams }) => [id, grams]);
+    assert.deepEqual(pantry, [['reis', 250]]);
+
+    // The shop is not booked again, and correcting the pantry does not open it.
+    assert.equal(actions.settleShopping(), false);
+    actions.changePantry([{ name: 'Olivenöl', grams: 500 }]);
+    assert.equal(actions.getPlan().settled, true);
+    assert.deepEqual(actions.getPlan().pantry, plan.pantry);
+    assert.deepEqual(
+      actions.getPantry().map(({ id, grams }) => [id, grams]),
+      [...pantry, ['olivenoel', 500]]
+    );
+  });
+
+  // Before the shop: the list follows the plan; a line in the cart that now needs more opens again.
+  const before = await midWeek({ settled: false });
+  await withApp([before.answer], async () => {
+    const { read, write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    const home = [{ id: 'reis', name: 'Reis', grams: 100, category: 'Vorrat', since: before.day(-4) }];
+    write('profile', before.person);
+    write('plan', { ...before.plan, pantry: home });
+    write('pantry', home);
+    write('shop', { rinderhack: true, reis: true });
+
+    await actions.replaceRecipe('b');
+    assert.equal(actions.planning.error, null);
+    const plan = actions.getPlan();
+    assert.ok(!plan.settled);
+    assert.deepEqual(plan.pantry, home);
+    assert.deepEqual(actions.getPantry(), home, 'nothing was bought, so nothing comes home');
+    assert.deepEqual(open(shoppingList(plan), read('shop', {})), [
+      ['rinderhack', '800 g'],
+      ['nudeln', '400 g'],
+    ]);
+    assert.equal(read('shop', {}).reis, true);
+  });
+});
+
 test('one shop a week: last shop day before cooking, with fillers, staples and supplements', () => {
   assert.equal(shopDate({ shopWeekday: 6 }, START), '2026-11-07');
   assert.equal(shopDate({ shopWeekday: 0 }, START), START, 'on the cook day itself');

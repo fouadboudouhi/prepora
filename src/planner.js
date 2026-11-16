@@ -843,3 +843,56 @@ export function replaceDish(plan, fresh, recipeId) {
   );
   return { ...plan, recipes, meals, cookDays };
 }
+
+// The shop after a dish was swapped. Before it is done, the list simply follows the plan; a line in the cart that now
+// needs more opens again. After it, what was bought stays bought and is not booked a second time: what the old dish no
+// longer needs is at home now, the new dish takes from home first, and only the rest is on the list. `home` is what is
+// at home today; the plan's own pantry only says what its list takes off.
+export function shopAfterSwap(old, next, { checked = {}, home = [], today }) {
+  const amounts = (plan) =>
+    new Map(
+      mergedIngredients(plan)
+        .filter((item) => item.category !== CHECK_GROUP && item.grams)
+        .map((item) => [item.id, item])
+    );
+  const before = amounts(old);
+  const after = amounts(next);
+  const ticks = { ...checked };
+  if (!old.settled) {
+    const bought = (item, plan) => {
+      const { need, packs } = packsFor(item, haveOf(plan, item.id));
+      return item.pack ? packs * item.pack : need;
+    };
+    for (const [id, item] of after) {
+      const was = before.get(id);
+      if (ticks[id] && (!was || bought(item, next) > bought(was, old))) ticks[id] = false;
+    }
+    return { pantry: next.pantry ?? [], checked: ticks, home };
+  }
+  const pantry = (next.pantry ?? []).map((entry) => ({ ...entry }));
+  const left = home.map((entry) => ({ ...entry }));
+  for (const id of new Set([...before.keys(), ...after.keys()])) {
+    const was = before.get(id)?.grams ?? 0;
+    const now = after.get(id)?.grams ?? 0;
+    const item = after.get(id) ?? before.get(id);
+    const found = left.find((entry) => entry.id === id);
+    if (now < was) {
+      // Bought for the old dish and never cooked. Small rests are not worth a line, as when days are dropped.
+      const grams = was - now;
+      if (grams < 30) continue;
+      if (found) found.grams += grams;
+      else left.push({ id, name: item.name, grams, category: item.category ?? 'Vorrat', since: today });
+    } else if (now > was) {
+      const take = Math.min(now - was, found?.grams ?? 0);
+      if (found) found.grams -= take;
+      // The list takes off what was bought and what comes from home; the rest is to buy.
+      const have = was + take;
+      const entry = pantry.find((other) => other.id === id);
+      if (entry) entry.grams = have;
+      else
+        pantry.push({ id, name: item.name, grams: have, category: item.category ?? 'Vorrat', since: today });
+      if (now > have) ticks[id] = false;
+    }
+  }
+  return { pantry, checked: ticks, home: left.filter((entry) => entry.grams > 0) };
+}

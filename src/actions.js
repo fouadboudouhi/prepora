@@ -23,6 +23,7 @@ import {
   repeatPlan,
   replaceBlock,
   replaceDish,
+  shopAfterSwap,
   shopDate,
   shoppingCost,
   shoppingList,
@@ -96,9 +97,9 @@ export function changePantry(changes = [], today = localDay()) {
   }
   savePantry(list);
   // Until the shop is really done, what is at home is what the list takes off. A plan that was taken as bought
-  // too early opens again.
+  // too early opens again; one whose dish was swapped after the shop stays bought, its new lines are a second shop.
   const plan = getPlan();
-  if (plan && (!plan.settled || !shopDone(plan))) {
+  if (plan && (!plan.settled || (!shopDone(plan) && !plan.swappedAfterShop))) {
     const { settled, ...rest } = plan;
     const next = { ...rest, pantry: list };
     savePlan({ ...next, cost: shoppingCost(next) });
@@ -517,12 +518,18 @@ export function replaceRecipe(recipeId, wish = '') {
 // Claude's dish meets the plan as it is now: a box may have been eaten or the plan replaced while Claude planned.
 function takeReplacement(planId, recipeId, fresh) {
   const plan = getPlan();
-  const next = plan?.id === planId && !replaceBlocked(recipeId) ? replaceDish(plan, fresh, recipeId) : null;
-  if (!next) throw new SessionError('changed');
+  const swapped =
+    plan?.id === planId && !replaceBlocked(recipeId) ? replaceDish(plan, fresh, recipeId) : null;
+  if (!swapped) throw new SessionError('changed');
+  const today = localDay();
+  const shop = shopAfterSwap(plan, swapped, { checked: read('shop', {}), home: getPantry(today), today });
+  const next = { ...swapped, pantry: shop.pantry, ...(plan.settled ? { swappedAfterShop: true } : {}) };
   next.cost = shoppingCost(next);
   scheduleReminders(next);
   savePlan(next);
   syncBlocks(getProfile(), next);
+  write('shop', shop.checked);
+  if (plan.settled) savePantry(shop.home);
 }
 
 // The week that went down best, again, without Claude and without a cost.
