@@ -76,11 +76,14 @@ export async function call(path, options = {}, token = getSession()?.token) {
   if (response.ok || response.status === 404) return response;
   const answer = await response.json().catch(() => ({}));
   const detail = answer?.error?.message ?? (typeof answer?.error === 'string' ? answer.error : '');
-  throw new SessionError(
-    { 401: 'user', 402: 'budget', 412: 'newer', 429: 'blocked', 503: 'noai' }[response.status] ?? 'server',
-    detail,
-    answer?.latest ?? ''
-  );
+  // The server answers 429 for two different things: too many wrong sign-ins, and a Claude request while another
+  // one of this account is still running. Only the first is a reason to wait ten minutes.
+  const code =
+    response.status === 429 && detail === 'busy'
+      ? 'busy'
+      : ({ 401: 'user', 402: 'budget', 412: 'newer', 429: 'blocked', 503: 'noai' }[response.status] ??
+        'server');
+  throw new SessionError(code, detail, answer?.latest ?? '');
 }
 
 export async function signIn(username, password) {

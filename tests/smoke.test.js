@@ -1043,7 +1043,7 @@ test('a failed plan says why and keeps the screen usable', async () => {
   await page.click('[data-tab="plan"]');
   await page.click('[data-action="newWeek"]');
   await page.waitForSelector('.error');
-  assert.match(await page.locator('.error').first().innerText(), /aufgebraucht/);
+  assert.match(await page.locator('.error').first().innerText(), /reicht dafür nicht mehr/);
   assert.equal(await page.locator('[data-action="newWeek"]').count(), 1);
   await context.close();
 });
