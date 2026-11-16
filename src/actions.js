@@ -281,8 +281,11 @@ export function planShape(options = {}, profile = getProfile(), today = localDay
   )
     start = options.start;
   // The second weekday from the profile counts only for the two cook days chosen there. A second day that freshness
-  // adds, or other days or cook days asked for here, are spread over the plan instead.
-  const chosen = cookDays === 2 && wanted === 2 && profile.cookDays === 2 && days === (profile.eatDays ?? 7);
+  // adds, other days or cook days asked for here, or a start on another weekday are spread over the plan instead.
+  // It only fits a start on the first cook weekday: from another day the gap to it could be anything.
+  const onWeekday = new Date(`${start}T00:00:00Z`).getUTCDay() === (profile.cookWeekday ?? 0);
+  const chosen =
+    cookDays === 2 && wanted === 2 && profile.cookDays === 2 && days === (profile.eatDays ?? 7) && onWeekday;
   const shaped = { ...profile, eatDays: days, cookDays, ...(chosen ? {} : { cookWeekday2: null }) };
   const regular = shopDate(profile, start);
   const shopOn = regular < today ? today : regular;

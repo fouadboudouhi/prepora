@@ -874,7 +874,15 @@ test('"Neu planen" keeps the chosen second weekday unless days or cook days were
   };
   assert.deepEqual(dates({}), ['2026-11-21', '2026-11-23']);
   assert.deepEqual(dates({ days: 7, cookDays: 2 }), ['2026-11-21', '2026-11-23']);
-  assert.deepEqual(dates({ days: 7, cookDays: 2, start: 'tomorrow' }), ['2026-11-17', '2026-11-23']);
+  // A start on another weekday spreads: the second weekday only fits a start on the first.
+  assert.deepEqual(dates({ days: 7, cookDays: 2, start: 'tomorrow' }), ['2026-11-17', '2026-11-21']);
+  assert.deepEqual(dates({ days: 7, cookDays: 2, start: 'today' }), ['2026-11-16', '2026-11-20']);
+  assert.deepEqual(dates({ days: 7, cookDays: 2, start: '2026-11-28' }), ['2026-11-28', '2026-11-30']);
+  for (const today of ['2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-22']) {
+    const shape = planShape({ start: 'today' }, { ...profile, freezer: true }, today);
+    const [first, second] = cookDates(shape.profile, shape.start);
+    assert.equal((Date.parse(second) - Date.parse(first)) / 864e5, 4, today);
+  }
   assert.deepEqual(dates({ days: 6, cookDays: 2 }), ['2026-11-21', '2026-11-24']);
   assert.deepEqual(dates({ days: 7, cookDays: 3 }), ['2026-11-21', '2026-11-23', '2026-11-26']);
 });
