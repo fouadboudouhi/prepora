@@ -982,6 +982,46 @@ test('what is at home can be corrected, and earlier plans deleted while the curr
   await context.close();
 });
 
+test('an entry made with Return shows at once, and a redraw held back while typing comes when the field is left', async () => {
+  const { context, page, errors } = await open({ storage: ready });
+  await page.click('[data-tab="more"]');
+  await page.click('#openPantry');
+  await page.fill('#pantryAdd [name="name"]', 'Testreis');
+  await page.fill('#pantryAdd [name="grams"]', '500');
+  await page.press('#pantryAdd [name="grams"]', 'Enter');
+  assert.match(await page.locator('#pantryList').innerText(), /Testreis/);
+  assert.equal(await page.inputValue('#pantryAdd [name="name"]'), '');
+  await page.fill('#fridgeAdd [name="item"]', 'halbe Gurke');
+  await page.press('#fridgeAdd [name="item"]', 'Enter');
+  assert.match(await page.locator('#fridgeList').innerText(), /halbe Gurke/);
+  assert.equal(await page.inputValue('#fridgeAdd [name="item"]'), '');
+
+  // Claude answers while another field is being typed in: the answer waits for the field, then shows.
+  let answer;
+  const held = new Promise((resolve) => (answer = resolve));
+  await page.route(`${SERVER}/v1/ai/messages`, async (route) => {
+    await held;
+    await route.fallback();
+  });
+  await page.click('[data-tab="more"]');
+  await page.click('#openProfile');
+  await page.fill('[name="goalText"]', 'Bauch weg, Muskeln behalten.');
+  await page.click('[data-action="adviseGoal"]');
+  await page.click('[name="avoid"]');
+  await page.keyboard.type('Pilze');
+  const responded = page.waitForResponse(`${SERVER}/v1/ai/messages`);
+  answer();
+  await responded;
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#goalAdvice').count(), 0);
+  assert.equal(await page.inputValue('[name="avoid"]'), 'Pilze');
+  await page.locator('h1').click();
+  await page.waitForSelector('#goalAdvice');
+  assert.equal(await page.inputValue('[name="avoid"]'), 'Pilze');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('a shop day that passed without shopping still follows the pantry, and single days come out of the plan', async () => {
   const { context, page } = await open({ storage: ready });
   await page.click('nav [data-tab="plan"]');
