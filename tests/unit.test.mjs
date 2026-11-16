@@ -17,6 +17,7 @@ import {
   buildSlots,
   cookDates,
   freshCookDays,
+  FRIDGE_DAYS,
   finishPlan,
   nextStart,
   placeStock,
@@ -832,6 +833,50 @@ test('cook days spread over a plan of any length, and without a freezer there ar
   assert.equal(freshCookDays({ freezer: false }, 10, 1), 3);
   assert.equal(freshCookDays({ freezer: false }, 4, 1), 1);
   assert.equal(freshCookDays({ freezer: true }, 10, 1), 1);
+});
+
+// Every eating day has a cook day before it that is at most as old as the fridge allows.
+const keepsFresh = (dates, start, days) =>
+  Array.from({ length: days }, (_, index) => Date.parse(`${start}T00:00:00Z`) / 864e5 + index + 1).every(
+    (day) =>
+      dates.some((date) => {
+        const age = day - Date.parse(`${date}T00:00:00Z`) / 864e5;
+        return age >= 0 && age <= FRIDGE_DAYS;
+      })
+  );
+
+test('without a freezer every cook weekday makes a plan that keeps, a second weekday only when it was chosen', () => {
+  const today = '2026-11-16';
+  for (let cookWeekday = 0; cookWeekday < 7; cookWeekday += 1)
+    for (let cookWeekday2 = 0; cookWeekday2 < 7; cookWeekday2 += 1)
+      for (const cookDays of [1, 2]) {
+        const profile = { cookWeekday, cookWeekday2, cookDays, eatDays: 7, freezer: false };
+        const shape = planShape({}, profile, today);
+        const dates = cookDates(shape.profile, shape.start);
+        assert.ok(keepsFresh(dates, shape.start, 7), `${cookWeekday}/${cookWeekday2}/${cookDays}: ${dates}`);
+      }
+  // Thursday with one cook day chosen: the second is spread, not the Wednesday the profile never asked for.
+  const thursday = planShape({}, { cookWeekday: 4, cookWeekday2: 3, cookDays: 1, freezer: false }, today);
+  assert.deepEqual(cookDates(thursday.profile, thursday.start), ['2026-11-19', '2026-11-23']);
+  const sunday = planShape({}, { cookWeekday: 0, cookWeekday2: 3, cookDays: 1, freezer: false }, today);
+  assert.deepEqual(cookDates(sunday.profile, sunday.start), ['2026-11-22', '2026-11-26']);
+  // Two chosen, and the chosen weekday keeps: it stays.
+  const chosen = planShape({}, { cookWeekday: 0, cookWeekday2: 3, cookDays: 2, freezer: false }, today);
+  assert.deepEqual(cookDates(chosen.profile, chosen.start), ['2026-11-22', '2026-11-25']);
+});
+
+test('"Neu planen" keeps the chosen second weekday unless days or cook days were changed there', () => {
+  const today = '2026-11-16';
+  const profile = { cookDays: 2, cookWeekday: 6, cookWeekday2: 1, eatDays: 7 };
+  const dates = (options) => {
+    const shape = planShape(options, profile, today);
+    return cookDates(shape.profile, shape.start);
+  };
+  assert.deepEqual(dates({}), ['2026-11-21', '2026-11-23']);
+  assert.deepEqual(dates({ days: 7, cookDays: 2 }), ['2026-11-21', '2026-11-23']);
+  assert.deepEqual(dates({ days: 7, cookDays: 2, start: 'tomorrow' }), ['2026-11-17', '2026-11-23']);
+  assert.deepEqual(dates({ days: 6, cookDays: 2 }), ['2026-11-21', '2026-11-24']);
+  assert.deepEqual(dates({ days: 7, cookDays: 3 }), ['2026-11-21', '2026-11-23', '2026-11-26']);
 });
 
 test('while a plan runs its own cook and shop days remind, not the weekdays', () => {

@@ -280,8 +280,10 @@ export function planShape(options = {}, profile = getProfile(), today = localDay
     options.start <= addDaysTo(today, 14)
   )
     start = options.start;
-  const fixed = options.start !== undefined || options.cookDays !== undefined;
-  const shaped = { ...profile, eatDays: days, cookDays, ...(fixed ? { cookWeekday2: null } : {}) };
+  // The second weekday from the profile counts only for the two cook days chosen there. A second day that freshness
+  // adds, or other days or cook days asked for here, are spread over the plan instead.
+  const chosen = cookDays === 2 && wanted === 2 && profile.cookDays === 2 && days === (profile.eatDays ?? 7);
+  const shaped = { ...profile, eatDays: days, cookDays, ...(chosen ? {} : { cookWeekday2: null }) };
   const regular = shopDate(profile, start);
   const shopOn = regular < today ? today : regular;
   const note =
