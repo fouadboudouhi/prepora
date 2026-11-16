@@ -814,6 +814,23 @@ test('while a plan runs its own cook and shop days remind, not the weekdays', ()
   assert.ok(ids.includes('cook-2026-11-15'));
 });
 
+test('a second cook day keeps its own time once the first is done', () => {
+  const at = new Date('2026-11-05T08:00:00').getTime();
+  const plan = {
+    start: '2026-11-04',
+    shopOn: '2026-11-03',
+    cookDays: [{ date: '2026-11-04', done: true }, { date: '2026-11-07' }],
+    meals: [{ date: '2026-11-05' }, { date: '2026-11-10' }],
+  };
+  const alarms = blockAlarms({ cookWeekday: 3, cookTime: '10:00', cookTime2: '18:00' }, at, plan);
+  const second = alarms.find((alarm) => alarm.id === 'cook-2026-11-07');
+  assert.equal(second.at, new Date('2026-11-07T18:00:00').getTime());
+  assert.equal(
+    alarms.some((alarm) => alarm.id === 'cook-2026-11-04'),
+    false
+  );
+});
+
 test('fixed times become reminders for the coming weeks, at the chosen time', () => {
   const at = new Date('2026-11-03T12:00:00').getTime();
   const alarms = blockAlarms(

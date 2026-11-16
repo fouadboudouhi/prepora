@@ -70,15 +70,16 @@ const timeOf = (date, time) => new Date(`${date}T${time}:00`).getTime();
 export function blockAlarms(profile, now = Date.now(), plan = null) {
   const alarms = [];
   const minutes = profile.cookMinutes ?? 90;
-  const cookDates = (plan?.cookDays ?? []).filter((day) => !day.done).map((day) => day.date);
+  // A cook day's time goes by its place in the plan, so the second keeps its own once the first is done.
+  const cookDays = plan?.cookDays ?? [];
   const lastMeal = (plan?.meals ?? []).reduce((last, meal) => (meal.date > last ? meal.date : last), '');
   const firstDay = plan ? [plan.shopOn, plan.start].filter(Boolean).sort()[0] : '';
   for (let days = 0; days < BLOCK_DAYS; days += 1) {
     const date = dateAhead(now, days);
     const weekday = new Date(`${date}T12:00:00`).getDay();
     if (plan && date >= firstDay && date <= lastMeal) {
-      const index = cookDates.indexOf(date);
-      if (index >= 0)
+      const index = cookDays.findIndex((day) => day.date === date);
+      if (index >= 0 && !cookDays[index].done)
         alarms.push({
           id: `cook-${date}`,
           at: timeOf(
