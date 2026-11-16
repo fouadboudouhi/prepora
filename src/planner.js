@@ -414,7 +414,10 @@ export function finishPlan(
     return { ...filler, servings, nutrition: perPortion(addUp(filler.ingredients ?? []), servings) };
   });
 
-  const steps = (answer.cookDays ?? []).map((day) => ({
+  // With fixed cook days, a day Claude only echoed from the old plan is not one of them and must not take their place.
+  const given = answer.cookDays ?? [];
+  const onTime = cookOn ? given.filter((day) => dates.includes(day.date)) : [];
+  const steps = (onTime.length ? onTime : given).map((day) => ({
     date: dates.includes(day.date) ? day.date : dates[0],
     minutes: day.minutes,
     equipment: day.equipment ?? [],
@@ -832,15 +835,30 @@ export function replaceDish(plan, fresh, recipeId) {
     ...plan.recipes.filter((recipe) => recipe.id !== recipeId),
     ...fresh.recipes.map((recipe) => ({ ...recipe, id: ids.get(recipe.id), cookDate: old.cookDate })),
   ];
-  const day = fresh.cookDays[0];
-  const steps = (day?.steps ?? []).map((step) =>
+  // The day that cooks the new dish; finishPlan has put every day on the dish's cook day already.
+  const day =
+    fresh.cookDays.find((entry) => entry.steps.some((step) => ids.has(step.recipeId))) ?? fresh.cookDays[0];
+  const named = (day?.steps ?? []).map((step) =>
     ids.has(step.recipeId) ? { ...step, recipeId: ids.get(step.recipeId) } : step
   );
-  const cookDays = plan.cookDays.map((entry) =>
-    entry.date === old.cookDate && !entry.done && day
-      ? { ...entry, minutes: day.minutes, equipment: day.equipment, steps }
-      : entry
-  );
+  const cookDays = plan.cookDays.map((entry) => {
+    if (entry.date !== old.cookDate || entry.done || !day) return entry;
+    // Another dish of this day that Claude left out keeps its own steps, so its boxes still get cooked.
+    const others = new Set(
+      plan.recipes
+        .filter((recipe) => recipe.id !== recipeId && recipe.cookDate === old.cookDate)
+        .filter((recipe) => !named.some((step) => step.recipeId === recipe.id))
+        .map((recipe) => recipe.id)
+    );
+    const kept = entry.steps.filter((step) => others.has(step.recipeId));
+    if (!kept.length) return { ...entry, minutes: day.minutes, equipment: day.equipment, steps: named };
+    return {
+      ...entry,
+      minutes: Math.max(day.minutes ?? 0, entry.minutes ?? 0),
+      equipment: [...new Set([...(day.equipment ?? []), ...(entry.equipment ?? [])])],
+      steps: withIds([...named, ...kept].map(({ id, ...step }) => step)),
+    };
+  });
   return { ...plan, recipes, meals, cookDays };
 }
 
@@ -867,12 +885,24 @@ export function shopAfterSwap(old, next, { checked = {}, home = [], today }) {
       const was = before.get(id);
       if (ticks[id] && (!was || bought(item, next) > bought(was, old))) ticks[id] = false;
     }
-    return { pantry: next.pantry ?? [], checked: ticks, home };
+    // A line in the cart that the new plan needs less of: what is in the cart counts as at home, so the shop books it.
+    const pantry = (next.pantry ?? []).map((entry) => ({ ...entry }));
+    for (const [id, was] of before) {
+      const item = after.get(id);
+      if (!ticks[id] || (item && bought(item, next) >= bought(was, old))) continue;
+      const grams = haveOf(old, id) + bought(was, old);
+      const entry = pantry.find((other) => other.id === id);
+      if (entry) entry.grams = grams;
+      else pantry.push({ id, name: was.name, grams, category: was.category ?? 'Vorrat', since: today });
+    }
+    return { pantry, checked: ticks, home };
   }
   const pantry = (next.pantry ?? []).map((entry) => ({ ...entry }));
   const left = home.map((entry) => ({ ...entry }));
   for (const id of new Set([...before.keys(), ...after.keys()])) {
-    const was = before.get(id)?.grams ?? 0;
+    // What is covered: all of it after the shop, unless an earlier swap left a rest to buy that is not bought yet.
+    const need = before.get(id)?.grams ?? 0;
+    const was = old.swappedAfterShop && ticks[id] === false ? Math.min(need, haveOf(old, id)) : need;
     const now = after.get(id)?.grams ?? 0;
     const item = after.get(id) ?? before.get(id);
     const found = left.find((entry) => entry.id === id);

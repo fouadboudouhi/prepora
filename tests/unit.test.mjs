@@ -853,7 +853,7 @@ async function midWeek({ settled = true } = {}) {
   };
   // The profile has another shape than the plan on purpose: the swap must keep the plan's.
   const person = { meals: ['Mittagessen', 'Abendessen'], eatDays: 7, cookDays: 2, cookWeekday: 0, people: 1 };
-  return { plan, answer, person, day, today };
+  return { plan, answer, person, day, today, step };
 }
 
 test('swapping a dish changes the running plan: eaten, rated and cooked stays, past days count the same', async () => {
@@ -981,13 +981,107 @@ test('swapping a dish keeps the shop: ticks stay, what is missing is on the list
     assert.equal(actions.planning.error, null);
     const plan = actions.getPlan();
     assert.ok(!plan.settled);
-    assert.deepEqual(plan.pantry, home);
-    assert.deepEqual(actions.getPantry(), home, 'nothing was bought, so nothing comes home');
+    assert.deepEqual(actions.getPantry(), home, 'the shop is not done, so nothing comes home yet');
+    // Reis in the cart: 700 g bought for 800 g, now 600 g are needed. What is in the cart counts as at home.
+    assert.deepEqual(
+      plan.pantry.map(({ id, grams }) => [id, grams]),
+      [['reis', 800]]
+    );
     assert.deepEqual(open(shoppingList(plan), read('shop', {})), [
       ['rinderhack', '800 g'],
       ['nudeln', '400 g'],
     ]);
     assert.equal(read('shop', {}).reis, true);
+
+    // The shop is done: the rice bought for the old dish is booked, not lost.
+    write('shop', { ...read('shop', {}), rinderhack: true, nudeln: true });
+    assert.equal(actions.settleShopping(), true);
+    assert.deepEqual(
+      actions.getPantry().map(({ id, grams }) => [id, grams]),
+      [['reis', 200]]
+    );
+  });
+
+  // Two swaps after the shop: a rest the first swap put on the list and that was not bought is no food at home.
+  const twice = await midWeek();
+  const salad = {
+    ...twice.answer,
+    recipes: [
+      {
+        ...twice.answer.recipes[0],
+        id: 'e',
+        name: 'Salat',
+        ingredients: [twice.answer.recipes[0].ingredients[0]],
+      },
+    ],
+    assignments: twice.answer.assignments.map((entry) => ({ ...entry, recipeId: 'e' })),
+    cookDays: [{ ...twice.answer.cookDays[0], steps: [twice.step('e', 'Salat')] }],
+  };
+  await withApp([twice.answer, salad], async () => {
+    const { read, write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    write('profile', twice.person);
+    write('plan', twice.plan);
+    write('pantry', [
+      { id: 'rinderhack', name: 'Hack', grams: 100, category: 'Vorrat', since: twice.day(-4) },
+    ]);
+    write('shop', { rinderhack: true, reis: true });
+
+    await actions.replaceRecipe('b');
+    assert.deepEqual(open(shoppingList(actions.getPlan()), read('shop', {}))[0], ['rinderhack', '200 g']);
+    await actions.replaceRecipe('c');
+    assert.equal(actions.planning.error, null);
+    // Of the Hack only the 100 g taken from home come back; the 200 g on the list were never bought.
+    assert.deepEqual(actions.getPantry().find((entry) => entry.id === 'rinderhack')?.grams, 100);
+  });
+});
+
+test('swapping a dish keeps the steps of the other dishes of its cook day', async () => {
+  const { plan, answer, person, day, step } = await midWeek();
+  const bowl = { ...plan.recipes[1], id: 'd', name: 'Bowl', portions: 1 };
+  const shared = {
+    ...plan,
+    recipes: [...plan.recipes, bowl],
+    meals: plan.meals.map((meal) => (meal.id === '6-Abendessen' ? { ...meal, recipeId: 'd' } : meal)),
+    cookDays: [
+      plan.cookDays[0],
+      {
+        ...plan.cookDays[1],
+        equipment: ['Pfanne', 'Schüssel'],
+        steps: [
+          { ...step('b', 'Curry'), id: 's1' },
+          { ...step('d', 'Bowl'), id: 's2' },
+        ],
+      },
+    ],
+  };
+  // Claude echoes the done day from the old plan first and leaves the Bowl out of the swap day.
+  const echoed = {
+    ...answer,
+    assignments: answer.assignments.slice(0, 3),
+    cookDays: [{ ...plan.cookDays[0], steps: [step('a', 'Chili')] }, ...answer.cookDays],
+  };
+  await withApp([echoed], async () => {
+    const { write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    write('profile', person);
+    write('plan', shared);
+    await actions.replaceRecipe('b');
+    assert.equal(actions.planning.error, null);
+    const after = actions.getPlan();
+    assert.deepEqual(after.cookDays[0], shared.cookDays[0]);
+    const swapDay = after.cookDays[1];
+    assert.equal(swapDay.date, day(1));
+    assert.deepEqual(
+      swapDay.steps.map((entry) => [entry.recipeId, entry.title]),
+      [
+        ['c', 'Pasta'],
+        ['d', 'Bowl'],
+      ]
+    );
+    assert.equal(new Set(swapDay.steps.map((entry) => entry.id)).size, 2, 'every step keeps its own id');
+    assert.deepEqual(swapDay.equipment, ['Großer Topf', 'Pfanne', 'Schüssel']);
+    assert.equal(swapDay.minutes, 50);
   });
 });
 
