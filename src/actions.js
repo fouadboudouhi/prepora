@@ -16,9 +16,13 @@ import {
   mealName,
   mealNutrition,
   nextStart,
+  openBoxes,
   placeStock,
   planRequest,
+  recipeOf,
   repeatPlan,
+  replaceBlock,
+  replaceDish,
   shopDate,
   shoppingCost,
   shoppingList,
@@ -223,12 +227,12 @@ function adopt(plan) {
 
 // One correction is worth paying for when the answer breaks a rule. A second one is not; then the person hears it.
 async function requestPlan(options) {
-  const { profile, slots, start, stock, pantry, shopOn } = options;
+  const { profile, slots, start, stock, pantry, shopOn, cookOn } = options;
   const content = planRequest(options);
   const ask = (messages) =>
     askClaudeJson({ system: PLAN_SYSTEM, messages, maxTokens: 32000, effort: 'medium', format: PLAN_SCHEMA });
   const first = await ask([{ role: 'user', content }]);
-  const result = finishPlan(first, { profile, slots, start, stock, pantry, shopOn });
+  const result = finishPlan(first, { profile, slots, start, stock, pantry, shopOn, cookOn });
   if (!result.problems.length) return result.plan;
   const correction = `Dieser Plan bricht Regeln, korrigiere ihn:\n${result.problems.join('\n')}`;
   const second = await ask([
@@ -236,17 +240,18 @@ async function requestPlan(options) {
     { role: 'assistant', content: JSON.stringify(first) },
     { role: 'user', content: correction },
   ]);
-  const again = finishPlan(second, { profile, slots, start, stock, pantry, shopOn });
+  const again = finishPlan(second, { profile, slots, start, stock, pantry, shopOn, cookOn });
   if (again.problems.length) throw new SessionError('badplan', again.problems[0]);
   return again.plan;
 }
 
-async function runPlanning(work, replacing = null) {
+// `take` decides what Claude's plan does: a new plan is adopted, a swapped dish goes into the plan that runs.
+async function runPlanning(work, replacing = null, take = adopt) {
   if (planning.busy) return;
   Object.assign(planning, { busy: true, error: null, replacing });
   rerender();
   try {
-    adopt(await work());
+    take(await work());
   } catch (err) {
     planning.error = err;
   }
@@ -450,40 +455,74 @@ export function dropDays(dates = [], today = localDay()) {
   };
 }
 
-// The rest of the plan is meant to stay, so Claude gets it along and only changes this one dish.
-export function replaceRecipe(recipeId, wish = '') {
+// Why a dish cannot be swapped right now, or null. While its cook day is being cooked, its steps are in use.
+export function replaceBlocked(recipeId, today = localDay()) {
   const plan = getPlan();
-  const recipe = plan?.recipes.find((entry) => entry.id === recipeId);
-  if (!recipe) return Promise.resolve();
-  return runPlanning(async () => {
-    const taste = { ...getTaste(), never: [...new Set([...(getTaste().never ?? []), recipe.name])] };
-    const profile = getProfile();
-    const { recipes, meals, cookDays } = plan;
-    const slots = meals.map(({ id, date, meal, stock }) => ({ id, date, meal, ...(stock ? { stock } : {}) }));
-    return requestPlan({
-      profile,
-      taste,
-      fridge: [],
-      stock: [],
-      pantry: plan.pantry ?? [],
-      start: plan.start,
-      slots,
-      previous: {
-        recipes: recipes.map(({ nutrition, portions, estimated, ...rest }) => rest),
-        fillers: (plan.fillers ?? []).map(({ nutrition, ...rest }) => rest),
-        assignments: meals
-          .filter((meal) => meal.recipeId)
-          .map((meal) => ({ slot: meal.id, recipeId: meal.recipeId })),
-        cookDays,
-      },
-      correction: [
-        `Ersetze nur das Gericht "${recipe.name}" durch ein anderes und passe den Kochablauf dazu an. Alles andere bleibt.`,
-        wishLine(wish),
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    });
-  }, recipeId);
+  if (!plan) return 'missing';
+  const reason = replaceBlock(plan, recipeId, today);
+  if (reason) return reason;
+  const session = read('cook', null);
+  const started = session?.done?.length || session?.timers?.length;
+  return started && session.date === recipeOf(plan, recipeId).cookDate ? 'cooking' : null;
+}
+
+// Swapping a dish changes the plan that runs, it does not start a new one. Claude sees the whole plan for context but
+// plans only the open boxes of this dish, on its own cook day and in the plan's own shape, not the profile's.
+export function replaceRecipe(recipeId, wish = '') {
+  if (replaceBlocked(recipeId)) return Promise.resolve();
+  const plan = getPlan();
+  const recipe = recipeOf(plan, recipeId);
+  return runPlanning(
+    async () => {
+      const taste = { ...getTaste(), never: [...new Set([...(getTaste().never ?? []), recipe.name])] };
+      const profile = {
+        ...getProfile(),
+        eatDays: plan.days ?? new Set(plan.meals.map((meal) => meal.date)).size,
+        people: plan.people ?? 1,
+      };
+      const { recipes, meals, cookDays } = plan;
+      const slots = openBoxes(plan, recipeId).map(({ id, date, meal }) => ({ id, date, meal }));
+      return requestPlan({
+        profile,
+        taste,
+        fridge: [],
+        stock: [],
+        pantry: plan.pantry ?? [],
+        start: plan.start,
+        shopOn: plan.shopOn ?? null,
+        cookOn: [recipe.cookDate],
+        slots,
+        previous: {
+          recipes: recipes.map(({ nutrition, portions, estimated, ...rest }) => rest),
+          fillers: (plan.fillers ?? []).map(({ nutrition, ...rest }) => rest),
+          assignments: meals
+            .filter((meal) => meal.recipeId)
+            .map((meal) => ({ slot: meal.id, recipeId: meal.recipeId })),
+          cookDays,
+        },
+        correction: [
+          `Ersetze nur das Gericht "${recipe.name}" durch ein anderes, für die oben genannten Mahlzeiten. Alles andere bleibt.`,
+          `Gib nur das neue Gericht zurück, gekocht am ${recipe.cookDate}, und in "cookDays" den ganzen Kochablauf dieses Tages mit allen Rezepten, die dort gekocht werden. "fillers" bleibt leer.`,
+          wishLine(wish),
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      });
+    },
+    recipeId,
+    (fresh) => takeReplacement(plan.id, recipeId, fresh)
+  );
+}
+
+// Claude's dish meets the plan as it is now: a box may have been eaten or the plan replaced while Claude planned.
+function takeReplacement(planId, recipeId, fresh) {
+  const plan = getPlan();
+  const next = plan?.id === planId && !replaceBlocked(recipeId) ? replaceDish(plan, fresh, recipeId) : null;
+  if (!next) throw new SessionError('changed');
+  next.cost = shoppingCost(next);
+  scheduleReminders(next);
+  savePlan(next);
+  syncBlocks(getProfile(), next);
 }
 
 // The week that went down best, again, without Claude and without a cost.

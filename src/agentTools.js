@@ -20,6 +20,7 @@ import {
   dropDays,
   planning,
   repeatBestWeek,
+  replaceBlocked,
   replaceRecipe,
   saveFridge,
   saveStock,
@@ -380,6 +381,15 @@ function overview() {
   };
 }
 
+// Why a dish stays, in the words the assistant passes on.
+const NOT_REPLACED = {
+  missing: 'Dieses Rezept gibt es im aktuellen Plan nicht.',
+  cooked: 'Dieses Gericht ist schon gekocht und lässt sich nicht mehr tauschen.',
+  cooking: 'Dieses Gericht wird gerade gekocht und lässt sich nicht mehr tauschen.',
+  past: 'Für dieses Gericht gibt es keinen Kochtag mehr, es lässt sich nicht mehr tauschen.',
+  empty: 'Von diesem Gericht ist keine Box mehr offen.',
+};
+
 // The plan screen shows the same error the tool reports.
 async function plan(work) {
   if (planning.busy) return { error: 'Es wird schon ein Plan erstellt. Warte, bis er fertig ist.' };
@@ -553,10 +563,11 @@ export async function runTool(name, input = {}) {
       const result = dropDays(input.dates);
       return result.error ? result : { done: true, ...result, plan: planSummary(getPlan()) };
     }
-    case 'replace_dish':
-      if (!recipeOf(getPlan(), input.recipeId))
-        return { error: 'Dieses Rezept gibt es im aktuellen Plan nicht.' };
+    case 'replace_dish': {
+      const blocked = replaceBlocked(input.recipeId);
+      if (blocked) return { error: NOT_REPLACED[blocked] };
       return plan(() => replaceRecipe(input.recipeId, input.wish ?? ''));
+    }
     case 'repeat_best_week': {
       const before = getPlan()?.id;
       repeatBestWeek();
