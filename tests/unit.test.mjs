@@ -1058,3 +1058,26 @@ test('cook day: rewritten steps get fresh ids, an empty answer changes nothing',
   assert.equal(new Set(better.steps.map((step) => step.id)).size, 2);
   assert.ok(better.steps.every((step) => step.id !== 's1'));
 });
+
+test('"busy" from the server is not the same as being locked out', async () => {
+  const { call } = await import('../src/session.js');
+  const real = globalThis.fetch;
+  const answer = (status, body) => {
+    globalThis.fetch = async () => new Response(JSON.stringify(body), { status });
+  };
+  const codeOf = (path) =>
+    call(path, { method: 'POST', body: '{}' }, null).then(
+      () => 'ok',
+      (err) => err.code
+    );
+  try {
+    answer(429, { error: 'busy' });
+    assert.equal(await codeOf('/v1/ai/messages'), 'busy');
+    answer(429, { error: 'too many attempts' });
+    assert.equal(await codeOf('/v1/login'), 'blocked');
+    answer(402, { error: 'budget', used: 4.5, budget: 5 });
+    assert.equal(await codeOf('/v1/ai/messages'), 'budget');
+  } finally {
+    globalThis.fetch = real;
+  }
+});
