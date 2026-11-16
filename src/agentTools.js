@@ -145,7 +145,7 @@ export const TOOLS = [
   {
     name: 'replace_dish',
     description:
-      'Tauscht ein Gericht im aktuellen Plan gegen ein anderes, der Rest bleibt. Das alte Gericht kommt auf "Nie wieder".',
+      'Tauscht ein noch nicht gekochtes Gericht im aktuellen Plan gegen ein anderes. Der Rest des Plans bleibt, wie er ist: Gegessenes, Bewertungen, erledigte Kochtage und der Einkauf. Das alte Gericht fällt nur in diesem Plan weg, es wird nicht dauerhaft gesperrt. Soll es nie wiederkommen, frag nach und trag es mit update_taste unter "never" ein.',
     input_schema: {
       type: 'object',
       additionalProperties: false,
@@ -390,6 +390,10 @@ const NOT_REPLACED = {
   empty: 'Von diesem Gericht ist keine Box mehr offen.',
 };
 
+// Nothing is kept for later plans: not wanting a dish today is not the same as never wanting it again.
+const SWAP_NOTE =
+  'Das alte Gericht fällt nur in diesem Plan weg und kann in späteren Plänen wiederkommen. Soll es das nicht, frag nach.';
+
 // The plan screen shows the same error the tool reports.
 async function plan(work) {
   if (planning.busy) return { error: 'Es wird schon ein Plan erstellt. Warte, bis er fertig ist.' };
@@ -566,7 +570,8 @@ export async function runTool(name, input = {}) {
     case 'replace_dish': {
       const blocked = replaceBlocked(input.recipeId);
       if (blocked) return { error: NOT_REPLACED[blocked] };
-      return plan(() => replaceRecipe(input.recipeId, input.wish ?? ''));
+      const result = await plan(() => replaceRecipe(input.recipeId, input.wish ?? ''));
+      return result.error ? result : { ...result, note: SWAP_NOTE };
     }
     case 'repeat_best_week': {
       const before = getPlan()?.id;

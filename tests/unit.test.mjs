@@ -991,6 +991,31 @@ test('swapping a dish keeps the shop: ticks stay, what is missing is on the list
   });
 });
 
+test('a swapped dish is only left out of this plan, and the assistant is told so', async () => {
+  const { plan, answer, person } = await midWeek();
+  await withApp([answer], async (sent) => {
+    const { write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    const { TOOLS, runTool } = await import('../src/agentTools.js');
+    write('profile', person);
+    write('plan', plan);
+    write('taste', { never: ['Fisch'] });
+    const tool = TOOLS.find((entry) => entry.name === 'replace_dish');
+    assert.doesNotMatch(tool.description, /Nie wieder/);
+    assert.match(tool.description, /nur in diesem Plan/);
+
+    const result = await runTool('replace_dish', { recipeId: 'b' });
+    assert.equal(result.done, true);
+    assert.match(result.note, /nur in diesem Plan/);
+    assert.match(
+      sent[0].messages[0].content,
+      /Nie wieder: Fisch, Curry\./,
+      'Claude leaves it out of this plan'
+    );
+    assert.deepEqual(actions.getTaste(), { never: ['Fisch'] }, 'nothing is kept for later plans');
+  });
+});
+
 test('one shop a week: last shop day before cooking, with fillers, staples and supplements', () => {
   assert.equal(shopDate({ shopWeekday: 6 }, START), '2026-11-07');
   assert.equal(shopDate({ shopWeekday: 0 }, START), START, 'on the cook day itself');
