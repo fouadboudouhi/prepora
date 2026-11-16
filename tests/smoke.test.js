@@ -1518,8 +1518,14 @@ test('fixed times are set in the profile, a second cook day only shows when chos
   await page.click('[data-tab="more"]');
   await page.click('#openProfile');
   assert.equal(await page.locator('[name="cookTime2"]').count(), 0);
+  // Three or four cook days have no weekdays of their own: the profile says the app spreads them.
+  await page.selectOption('[name="cookDays"]', '3');
+  await page.waitForSelector('#cookDaysHint');
+  assert.match(await page.locator('#cookDaysHint').innerText(), /verteilt die App/);
+  assert.equal(await page.locator('[name="cookTime2"]').count(), 0);
   await page.selectOption('[name="cookDays"]', '2');
   await page.waitForSelector('[name="cookTime2"]');
+  assert.equal(await page.locator('#cookDaysHint').count(), 0);
   await page.fill('[name="cookTime"]', '09:30');
   await page.fill('[name="shopTime"]', '18:15');
   await page.locator('h1').click();
