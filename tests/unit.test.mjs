@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { kept } from '../src/agent.js';
+import { changePantry, getPantry, getPlan, planShape, savePlan, settleShopping } from '../src/actions.js';
 import { finishCookDay, handyAmount, nextOpen, readySession, sortedTimers } from '../src/cookDay.js';
 import { entryFromProduct, lookupProduct, productFrom, validCode } from '../src/barcode.js';
 import { calendarText } from '../src/calendar.js';
@@ -349,6 +350,42 @@ test('what is at home comes off the list, and what the packs leave goes into the
   );
   assert.equal(shoppingCost(plan), 0);
 });
+
+// A storage of its own for one test, so the parts that remember things run as they do in the browser.
+async function withStorage(run) {
+  const kept = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (kept.has(key) ? kept.get(key) : null),
+    setItem: (key, value) => kept.set(key, String(value)),
+    removeItem: (key) => kept.delete(key),
+  };
+  try {
+    await run();
+  } finally {
+    delete globalThis.localStorage;
+  }
+}
+
+test('a shop taken as bought by cooking stays bought when the pantry changes, nothing comes in twice', () =>
+  withStorage(() => {
+    const plan = {
+      id: 'p',
+      shopOn: '2026-11-07',
+      recipes: [{ name: 'A', ingredients: [food('Hack', 'rinderhack', 700, 500, 'Fleisch und Fisch')] }],
+      meals: [],
+      cookDays: [],
+      pantry: [],
+    };
+    savePlan(plan);
+    assert.equal(settleShopping('2026-11-08', { cooking: true }), true);
+    const grams = () => getPantry('2026-11-08').find((entry) => entry.id === 'rinderhack')?.grams;
+    assert.equal(grams(), 300);
+    changePantry([{ name: 'Olivenöl', grams: 500 }], '2026-11-08');
+    assert.equal(getPlan().settled, true);
+    assert.deepEqual(getPlan().pantry, []);
+    assert.equal(settleShopping('2026-11-08', { cooking: true }), false);
+    assert.equal(grams(), 300);
+  }));
 
 test('freezer portions take the last meals of the week', () => {
   const slots = buildSlots(profile, START);

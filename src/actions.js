@@ -91,12 +91,11 @@ export function changePantry(changes = [], today = localDay()) {
     else list.push(entry);
   }
   savePantry(list);
-  // Until the shop is really done, what is at home is what the list takes off. A plan that was taken as bought
-  // too early opens again.
+  // Until the shop is really done, what is at home is what the list takes off. Once it is booked into the pantry it
+  // stays booked: opening it again here would book the same leftovers a second time.
   const plan = getPlan();
-  if (plan && (!plan.settled || !shopDone(plan))) {
-    const { settled, ...rest } = plan;
-    const next = { ...rest, pantry: list };
+  if (plan && !plan.settled) {
+    const next = { ...plan, pantry: list };
     savePlan({ ...next, cost: shoppingCost(next) });
   }
   return list;

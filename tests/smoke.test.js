@@ -995,10 +995,7 @@ test('a shop day that passed without shopping still follows the pantry, and sing
     const yesterday = new Date(Date.now() - 864e5).toLocaleDateString('sv');
     const home = [{ id: item.food, name: item.name, grams: 200, category: 'Vorrat', since: yesterday }];
     localStorage.setItem('prepora-pantry', JSON.stringify(home));
-    localStorage.setItem(
-      'prepora-plan',
-      JSON.stringify({ ...plan, shopOn: yesterday, pantry: home, settled: true })
-    );
+    localStorage.setItem('prepora-plan', JSON.stringify({ ...plan, shopOn: yesterday, pantry: home }));
     return item.food;
   });
   await page.click('nav [data-tab="more"]');
