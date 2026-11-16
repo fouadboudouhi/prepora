@@ -1018,6 +1018,27 @@ test('an entry made with Return shows at once, and a redraw held back while typi
   await page.locator('h1').click();
   await page.waitForSelector('#goalAdvice');
   assert.equal(await page.inputValue('[name="avoid"]'), 'Pilze');
+
+  // Text typed into an add form but not sent stays when the held-back redraw comes.
+  let advise;
+  const late = new Promise((resolve) => (advise = resolve));
+  await page.route(`${SERVER}/v1/ai/messages`, async (route) => {
+    await late;
+    await route.fallback();
+  });
+  await page.click('[data-tab="more"]');
+  await page.click('#openSupplements');
+  await page.click('[data-action="askAdvice"]');
+  await page.click('#supplementAdd [name="name"]');
+  await page.keyboard.type('Magnesium');
+  const advised = page.waitForResponse(`${SERVER}/v1/ai/messages`);
+  advise();
+  await advised;
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#advice').count(), 0);
+  await page.locator('h1').click();
+  await page.waitForSelector('#advice');
+  assert.equal(await page.inputValue('#supplementAdd [name="name"]'), 'Magnesium');
   assert.deepEqual(errors, []);
   await context.close();
 });

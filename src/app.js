@@ -437,8 +437,17 @@ app.addEventListener('focusout', () => {
     if (done) return;
     done = true;
     document.removeEventListener('click', afterClick, true);
-    if (heldBack && !fold && !document.activeElement?.matches?.('input, select, textarea'))
+    if (heldBack && !fold && !document.activeElement?.matches?.('input, select, textarea')) {
+      // Text typed into a form but not sent yet survives the redraw.
+      const typed = [...app.querySelectorAll('form[id] input[type="text"], form[id] textarea')]
+        .filter((field) => field.name && field.value)
+        .map((field) => [field.form.id, field.name, field.value]);
       redrawKeepingPlace();
+      for (const [form, name, value] of typed) {
+        const field = document.getElementById(form)?.elements?.namedItem(name);
+        if (field && 'value' in field && !field.value) field.value = value;
+      }
+    }
   };
   const afterClick = (event) => setTimeout(() => catchUp(Boolean(event.target.closest?.('summary'))));
   document.addEventListener('click', afterClick, true);
