@@ -240,12 +240,13 @@ export function planRequest({
   ownRecipes = [],
   pantry = [],
   shopOn = null,
+  cookOn = null,
 }) {
   const fresh = pantry.filter(isPerishable);
   const shelf = pantry.filter((entry) => !isPerishable(entry));
   const listed = (entries) => entries.map((entry) => `${entry.name} ${entry.grams} g`).join(', ');
   const targets = dailyTargets(profile);
-  const dates = cookDates(profile, start);
+  const dates = cookOn ?? cookDates(profile, start);
   const gap = targets ? dayGap(profile, targets) : null;
   const lines = [
     `Ziel: ${GOALS[profile.goal]?.label ?? 'gesund essen'}.`,
@@ -315,11 +316,15 @@ const perPortion = (total, portions) =>
   Object.fromEntries(Object.entries(total).map(([key, value]) => [key, Math.round(value / portions)]));
 
 // Turns Claude's answer into the plan the app uses, or says what is wrong with it. `problems` go back to Claude once.
-export function finishPlan(answer, { profile, slots, start, stock = [], pantry = [], shopOn = null }) {
+// `cookOn` names the cook days when they are fixed already, as when one dish of a running plan is swapped.
+export function finishPlan(
+  answer,
+  { profile, slots, start, stock = [], pantry = [], shopOn = null, cookOn = null }
+) {
   const problems = [];
   const people = profile.people ?? 1;
   const recipes = new Map((answer.recipes ?? []).map((recipe) => [recipe.id, recipe]));
-  const dates = cookDates(profile, start);
+  const dates = cookOn ?? cookDates(profile, start);
   const bySlot = new Map((answer.assignments ?? []).map((entry) => [entry.slot, entry.recipeId]));
 
   const meals = [];
@@ -409,7 +414,10 @@ export function finishPlan(answer, { profile, slots, start, stock = [], pantry =
     return { ...filler, servings, nutrition: perPortion(addUp(filler.ingredients ?? []), servings) };
   });
 
-  const steps = (answer.cookDays ?? []).map((day) => ({
+  // With fixed cook days, a day Claude only echoed from the old plan is not one of them and must not take their place.
+  const given = answer.cookDays ?? [];
+  const onTime = cookOn ? given.filter((day) => dates.includes(day.date)) : [];
+  const steps = (onTime.length ? onTime : given).map((day) => ({
     date: dates.includes(day.date) ? day.date : dates[0],
     minutes: day.minutes,
     equipment: day.equipment ?? [],
@@ -767,4 +775,154 @@ export function swapMeal(plan, mealId, otherId, today) {
   const [a, b] = [plan.meals.indexOf(meal), plan.meals.indexOf(other)];
   [plan.meals[a], plan.meals[b]] = [other, meal];
   return { meal, other };
+}
+
+// Why a dish of the running plan cannot be swapped, or null. A cooked dish is in the boxes already; a box of a day that
+// is over counts as eaten (see dayIntake), so its dish was cooked too. A dish whose cook day is over has no day left.
+export function replaceBlock(plan, recipeId, today) {
+  const recipe = recipeOf(plan, recipeId);
+  if (!recipe) return 'missing';
+  const cooked =
+    plan.cookDays.some((day) => day.done && day.date === recipe.cookDate) ||
+    plan.meals.some(
+      (meal) =>
+        meal.recipeId === recipeId && (meal.eaten || (!meal.skipped && !meal.missed && meal.date < today))
+    );
+  if (cooked) return 'cooked';
+  if (recipe.cookDate < today || !plan.cookDays.some((day) => day.date === recipe.cookDate)) return 'past';
+  return openBoxes(plan, recipeId).length ? null : 'empty';
+}
+
+// The boxes a new dish takes over: those of the old one that are still to be eaten.
+export const openBoxes = (plan, recipeId) =>
+  plan.meals.filter((meal) => meal.recipeId === recipeId && !meal.eaten && !meal.skipped && !meal.missed);
+
+// The new dish in the place of the old one, in the plan that runs. Everything else stays as it is: boxes eaten, rated,
+// moved or set aside, cook days that are done, the shop. Only the boxes of the old dish and the steps of its cook day
+// change. `fresh` is Claude's answer for the open boxes, finished. Null when the plan moved on while Claude planned.
+export function replaceDish(plan, fresh, recipeId) {
+  const old = recipeOf(plan, recipeId);
+  const open = openBoxes(plan, recipeId);
+  const answered = new Map(fresh.meals.map((meal) => [meal.id, meal]));
+  if (!old || !open.length || open.some((meal) => !answered.has(meal.id))) return null;
+  // The old dish goes, so its id is free; another dish of the plan keeps its own.
+  const taken = new Set(plan.recipes.filter((recipe) => recipe.id !== recipeId).map((recipe) => recipe.id));
+  const ids = new Map();
+  for (const recipe of fresh.recipes) {
+    let id = recipe.id;
+    for (let n = 2; taken.has(id); n += 1) id = `${recipe.id}-${n}`;
+    taken.add(id);
+    ids.set(recipe.id, id);
+  }
+  const first = ids.get(answered.get(open[0].id).recipeId);
+  const meals = plan.meals.map((meal) => {
+    if (meal.recipeId !== recipeId) return meal;
+    const { storage, thawOn, tooOld, twist, ...rest } = meal;
+    const now = answered.get(meal.id);
+    // A box set aside keeps where it was; it only carries the new name, so the old dish can go.
+    if (!now || meal.skipped || meal.missed)
+      return { ...rest, recipeId: first, storage, ...(thawOn ? { thawOn } : {}) };
+    return {
+      ...rest,
+      recipeId: ids.get(now.recipeId),
+      storage: now.storage,
+      ...(now.thawOn ? { thawOn: now.thawOn } : {}),
+      ...(now.tooOld ? { tooOld: true } : {}),
+      ...(now.twist ? { twist: now.twist } : {}),
+    };
+  });
+  const recipes = [
+    ...plan.recipes.filter((recipe) => recipe.id !== recipeId),
+    ...fresh.recipes.map((recipe) => ({ ...recipe, id: ids.get(recipe.id), cookDate: old.cookDate })),
+  ];
+  // The day that cooks the new dish; finishPlan has put every day on the dish's cook day already.
+  const day =
+    fresh.cookDays.find((entry) => entry.steps.some((step) => ids.has(step.recipeId))) ?? fresh.cookDays[0];
+  const named = (day?.steps ?? []).map((step) =>
+    ids.has(step.recipeId) ? { ...step, recipeId: ids.get(step.recipeId) } : step
+  );
+  const cookDays = plan.cookDays.map((entry) => {
+    if (entry.date !== old.cookDate || entry.done || !day) return entry;
+    // Another dish of this day that Claude left out keeps its own steps, so its boxes still get cooked.
+    const others = new Set(
+      plan.recipes
+        .filter((recipe) => recipe.id !== recipeId && recipe.cookDate === old.cookDate)
+        .filter((recipe) => !named.some((step) => step.recipeId === recipe.id))
+        .map((recipe) => recipe.id)
+    );
+    const kept = entry.steps.filter((step) => others.has(step.recipeId));
+    if (!kept.length) return { ...entry, minutes: day.minutes, equipment: day.equipment, steps: named };
+    return {
+      ...entry,
+      minutes: Math.max(day.minutes ?? 0, entry.minutes ?? 0),
+      equipment: [...new Set([...(day.equipment ?? []), ...(entry.equipment ?? [])])],
+      steps: withIds([...named, ...kept].map(({ id, ...step }) => step)),
+    };
+  });
+  return { ...plan, recipes, meals, cookDays };
+}
+
+// The shop after a dish was swapped. Before it is done, the list simply follows the plan; a line in the cart that now
+// needs more opens again. After it, what was bought stays bought and is not booked a second time: what the old dish no
+// longer needs is at home now, the new dish takes from home first, and only the rest is on the list. `home` is what is
+// at home today; the plan's own pantry only says what its list takes off.
+export function shopAfterSwap(old, next, { checked = {}, home = [], today }) {
+  const amounts = (plan) =>
+    new Map(
+      mergedIngredients(plan)
+        .filter((item) => item.category !== CHECK_GROUP && item.grams)
+        .map((item) => [item.id, item])
+    );
+  const before = amounts(old);
+  const after = amounts(next);
+  const ticks = { ...checked };
+  if (!old.settled) {
+    const bought = (item, plan) => {
+      const { need, packs } = packsFor(item, haveOf(plan, item.id));
+      return item.pack ? packs * item.pack : need;
+    };
+    for (const [id, item] of after) {
+      const was = before.get(id);
+      if (ticks[id] && (!was || bought(item, next) > bought(was, old))) ticks[id] = false;
+    }
+    // A line in the cart that the new plan needs less of: what is in the cart counts as at home, so the shop books it.
+    const pantry = (next.pantry ?? []).map((entry) => ({ ...entry }));
+    for (const [id, was] of before) {
+      const item = after.get(id);
+      if (!ticks[id] || (item && bought(item, next) >= bought(was, old))) continue;
+      const grams = haveOf(old, id) + bought(was, old);
+      const entry = pantry.find((other) => other.id === id);
+      if (entry) entry.grams = grams;
+      else pantry.push({ id, name: was.name, grams, category: was.category ?? 'Vorrat', since: today });
+    }
+    return { pantry, checked: ticks, home };
+  }
+  const pantry = (next.pantry ?? []).map((entry) => ({ ...entry }));
+  const left = home.map((entry) => ({ ...entry }));
+  for (const id of new Set([...before.keys(), ...after.keys()])) {
+    // What is covered: all of it after the shop, unless an earlier swap left a rest to buy that is not bought yet.
+    const need = before.get(id)?.grams ?? 0;
+    const was = old.swappedAfterShop && ticks[id] === false ? Math.min(need, haveOf(old, id)) : need;
+    const now = after.get(id)?.grams ?? 0;
+    const item = after.get(id) ?? before.get(id);
+    const found = left.find((entry) => entry.id === id);
+    if (now < was) {
+      // Bought for the old dish and never cooked. Small rests are not worth a line, as when days are dropped.
+      const grams = was - now;
+      if (grams < 30) continue;
+      if (found) found.grams += grams;
+      else left.push({ id, name: item.name, grams, category: item.category ?? 'Vorrat', since: today });
+    } else if (now > was) {
+      const take = Math.min(now - was, found?.grams ?? 0);
+      if (found) found.grams -= take;
+      // The list takes off what was bought and what comes from home; the rest is to buy.
+      const have = was + take;
+      const entry = pantry.find((other) => other.id === id);
+      if (entry) entry.grams = have;
+      else
+        pantry.push({ id, name: item.name, grams: have, category: item.category ?? 'Vorrat', since: today });
+      if (now > have) ticks[id] = false;
+    }
+  }
+  return { pantry, checked: ticks, home: left.filter((entry) => entry.grams > 0) };
 }

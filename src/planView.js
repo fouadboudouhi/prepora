@@ -12,6 +12,7 @@ import {
   planShape,
   planning,
   repeatBestWeek,
+  replaceBlocked,
   replaceRecipe,
   saveFridge,
 } from './actions.js';
@@ -191,6 +192,19 @@ function fridgeBlock() {
     </section>`;
 }
 
+// A dish that is cooked or has no cook day left stays; the row says why instead of offering to swap it.
+const KEPT = {
+  cooked: 'Schon gekocht',
+  cooking: 'Wird gekocht',
+  past: 'Kochtag vorbei',
+  empty: 'Nichts mehr offen',
+};
+function replaceButton(recipe) {
+  const kept = KEPT[replaceBlocked(recipe.id)];
+  if (kept) return `<span class="muted small">${kept}</span>`;
+  return `<button type="button" class="text-button" data-action="replaceRecipe" data-id="${esc(recipe.id)}"${planning.busy ? ' disabled' : ''} aria-label="${esc(recipe.name)} ersetzen">Ersetzen</button>`;
+}
+
 const busyBlock = () => `
   <section class="hero" role="status">
     <span class="eyebrow">${planning.replacing ? 'Gericht wird ersetzt' : 'Deine Woche entsteht'}</span>
@@ -310,7 +324,7 @@ export function planView() {
               <span class="block">${esc(recipe.name)}</span>
               <span class="muted small">ca. ${number(recipe.nutrition.kcal)} kcal, ${number(recipe.nutrition.protein)} g Eiweiß${recipe.estimated ? ', teils geschätzt' : ''}</span>
             </span>
-            <button type="button" class="text-button" data-action="replaceRecipe" data-id="${esc(recipe.id)}"${planning.busy ? ' disabled' : ''} aria-label="${esc(recipe.name)} ersetzen">Ersetzen</button>
+            ${replaceButton(recipe)}
           </div>`
         )
         .join('')}

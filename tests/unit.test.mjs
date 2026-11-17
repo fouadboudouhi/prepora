@@ -704,6 +704,412 @@ test('"Anderes Gericht": cooked dishes swap places with today, only where both k
   assert.equal(thawed.moved, true);
 });
 
+// The app as the screens use it, with a storage of its own and a fake Claude that gives the answers in turn, the last
+// one again and again. What was sent to Claude is kept to look at.
+async function withApp(answers, run) {
+  const real = { fetch: globalThis.fetch, storage: globalThis.localStorage };
+  const kept = new Map();
+  const sent = [];
+  globalThis.localStorage = {
+    getItem: (key) => (kept.has(key) ? kept.get(key) : null),
+    setItem: (key, value) => kept.set(key, String(value)),
+    removeItem: (key) => kept.delete(key),
+  };
+  globalThis.fetch = async (url, options = {}) => {
+    if (!String(url).endsWith('/v1/ai/messages')) return new Response('{}', { status: 200 });
+    sent.push(JSON.parse(options.body));
+    const delta = {
+      type: 'text_delta',
+      text: JSON.stringify(answers.length > 1 ? answers.shift() : answers[0]),
+    };
+    const stream = [
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
+    ];
+    return new Response(stream.map((event) => `data: ${JSON.stringify(event)}\n`).join(''), { status: 200 });
+  };
+  try {
+    return await run(sent);
+  } finally {
+    globalThis.fetch = real.fetch;
+    if (real.storage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = real.storage;
+  }
+}
+
+// A plan in the middle of its run: Chili is cooked and partly eaten, Curry is cooked tomorrow. Dates follow today,
+// because the app reads the clock itself.
+async function midWeek({ settled = true } = {}) {
+  const { localDay } = await import('../src/planner.js');
+  const today = localDay();
+  const day = (offset) => {
+    const at = new Date(`${today}T12:00:00`);
+    at.setDate(at.getDate() + offset);
+    return localDay(at);
+  };
+  const item = (name, foodId, grams) => ({ ...food(name, foodId, grams), packEuro: 1 });
+  const box = (id, offset, meal, recipeId, more = {}) => ({
+    id,
+    date: day(offset),
+    meal,
+    recipeId,
+    storage: 'fridge',
+    ...more,
+  });
+  const step = (recipeId, title) => ({
+    recipeId,
+    title,
+    detail: '',
+    uses: [],
+    doneWhen: '',
+    timerMinutes: 0,
+    timerName: '',
+    timerThen: '',
+  });
+  const nutrition = { kcal: 700, protein: 40, fat: 25, carbs: 70 };
+  const plan = {
+    id: 'week-1',
+    start: day(-3),
+    shopOn: day(-4),
+    days: 6,
+    people: 1,
+    createdAt: '2026-11-01T10:00:00.000Z',
+    stockUsed: [],
+    fillers: [],
+    pantry: [],
+    ...(settled ? { settled: true } : {}),
+    recipes: [
+      {
+        id: 'a',
+        name: 'Chili',
+        cookDate: day(-3),
+        fridgeDays: 4,
+        freezes: true,
+        reheat: '',
+        twists: [],
+        portions: 8,
+        nutrition,
+        ingredients: [item('Hack', 'rinderhack', 500), item('Reis', 'reis', 400)],
+      },
+      {
+        id: 'b',
+        name: 'Curry',
+        cookDate: day(1),
+        fridgeDays: 4,
+        freezes: true,
+        reheat: '',
+        twists: [],
+        portions: 4,
+        nutrition: { ...nutrition, kcal: 600 },
+        ingredients: [item('Reis', 'reis', 400)],
+      },
+    ],
+    meals: [
+      box('1-Mittagessen', -2, 'Mittagessen', 'a', { eaten: day(-2) }),
+      box('1-Abendessen', -2, 'Abendessen', 'a', { eaten: day(-2), rating: 'love' }),
+      box('2-Mittagessen', -1, 'Mittagessen', 'a', { eaten: day(-1), rating: 'okay' }),
+      box('2-Abendessen', -1, 'Abendessen', 'a'),
+      box('3-Mittagessen', 0, 'Mittagessen', 'a', { eaten: day(0) }),
+      box('3-Abendessen', 0, 'Abendessen', 'a', { moved: true }),
+      box('4-Mittagessen', 1, 'Mittagessen', 'a'),
+      box('4-Abendessen', 1, 'Abendessen', 'a', { missed: true }),
+      box('5-Mittagessen', 2, 'Mittagessen', 'b'),
+      box('5-Abendessen', 2, 'Abendessen', 'b'),
+      box('6-Mittagessen', 3, 'Mittagessen', 'b'),
+      box('6-Abendessen', 3, 'Abendessen', 'b'),
+    ],
+    cookDays: [
+      {
+        date: day(-3),
+        done: true,
+        minutes: 60,
+        equipment: ['Topf'],
+        steps: [{ ...step('a', 'Chili'), id: 's1' }],
+      },
+      { date: day(1), minutes: 45, equipment: ['Pfanne'], steps: [{ ...step('b', 'Curry'), id: 's1' }] },
+    ],
+  };
+  const answer = {
+    fillers: [],
+    recipes: [
+      {
+        id: 'c',
+        name: 'Pasta',
+        cookDate: day(1),
+        fridgeDays: 4,
+        freezes: true,
+        reheat: '',
+        twists: [],
+        ingredients: [
+          item('Nudeln', 'nudeln', 400),
+          item('Reis', 'reis', 200),
+          item('Hack', 'rinderhack', 300),
+        ],
+      },
+    ],
+    assignments: plan.meals.slice(8).map((meal) => ({ slot: meal.id, recipeId: 'c' })),
+    cookDays: [{ date: day(1), minutes: 50, equipment: ['Großer Topf'], steps: [step('c', 'Pasta')] }],
+  };
+  // The profile has another shape than the plan on purpose: the swap must keep the plan's.
+  const person = { meals: ['Mittagessen', 'Abendessen'], eatDays: 7, cookDays: 2, cookWeekday: 0, people: 1 };
+  return { plan, answer, person, day, today, step };
+}
+
+test('swapping a dish changes the running plan: eaten, rated and cooked stays, past days count the same', async () => {
+  const { plan, answer, person, day } = await midWeek();
+  await withApp([answer], async (sent) => {
+    const { write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    const { runTool } = await import('../src/agentTools.js');
+    write('profile', person);
+    write('plan', plan);
+    const counted = (offset) =>
+      dayIntake(day(offset), [actions.getPlan(), ...actions.getHistory()], actions.getAllExtras()).total;
+    const before = [-2, -1, 0].map(counted);
+
+    await actions.replaceRecipe('b');
+    assert.equal(actions.planning.error, null);
+    const after = actions.getPlan();
+    assert.deepEqual(
+      [after.id, after.start, after.days, after.shopOn, after.people],
+      [plan.id, plan.start, plan.days, plan.shopOn, plan.people]
+    );
+    assert.deepEqual(
+      after.meals.slice(0, 8),
+      plan.meals.slice(0, 8),
+      'every box of the cooked dish as it was'
+    );
+    assert.deepEqual(
+      after.meals.slice(8).map(({ id, date, meal, recipeId }) => [id, date, meal, recipeId]),
+      plan.meals.slice(8).map(({ id, date, meal }) => [id, date, meal, 'c'])
+    );
+    assert.deepEqual(
+      after.recipes.map((recipe) => [recipe.id, recipe.cookDate, recipe.portions]),
+      [
+        ['a', day(-3), 8],
+        ['c', day(1), 4],
+      ]
+    );
+    assert.deepEqual(after.cookDays[0], plan.cookDays[0], 'a cook day that is done stays as it was');
+    assert.equal(after.cookDays.length, 2);
+    assert.equal(after.cookDays[1].date, day(1));
+    assert.ok(!after.cookDays[1].done);
+    assert.deepEqual(after.cookDays[1].equipment, ['Großer Topf']);
+    assert.deepEqual(
+      after.cookDays[1].steps.map((entry) => entry.title),
+      ['Pasta']
+    );
+    assert.deepEqual(actions.getHistory(), [], 'the plan runs on, nothing goes to the earlier plans');
+    assert.deepEqual([-2, -1, 0].map(counted), before, 'past days count the same');
+
+    // Claude is asked in the plan's own shape, for the open boxes of the dish only.
+    const asked = sent[0].messages[0].content;
+    assert.match(asked, new RegExp(`Kochtage: ${day(1)},`));
+    assert.match(asked, /Zeitraum: 6 Tage/);
+    assert.match(asked, /5-Mittagessen: /);
+    assert.doesNotMatch(asked, /1-Mittagessen: /);
+
+    // A dish that is cooked stays: nothing is asked, nothing changes, and the assistant hears why.
+    const now = actions.getPlan();
+    await actions.replaceRecipe('a');
+    assert.equal(sent.length, 1);
+    assert.deepEqual(actions.getPlan(), now);
+    assert.match((await runTool('replace_dish', { recipeId: 'a' })).error, /gekocht/);
+    assert.equal(sent.length, 1);
+  });
+});
+
+test('swapping a dish keeps the shop: ticks stay, what is missing is on the list, nothing is booked twice', async () => {
+  const open = (shoppingListOf, checked) =>
+    shoppingListOf
+      .flatMap((group) => group.items)
+      .filter((item) => !checked[item.id])
+      .map((item) => [item.id, item.detail]);
+
+  // After the shop: everything was bought, the leftovers are at home already.
+  const after = await midWeek();
+  await withApp([after.answer], async () => {
+    const { read, write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    const home = [
+      { id: 'rinderhack', name: 'Hack', grams: 100, category: 'Vorrat', since: after.day(-4) },
+      { id: 'reis', name: 'Reis', grams: 50, category: 'Vorrat', since: after.day(-4) },
+    ];
+    write('profile', after.person);
+    write('plan', after.plan);
+    write('pantry', home);
+    write('shop', { rinderhack: true, reis: true });
+
+    await actions.replaceRecipe('b');
+    assert.equal(actions.planning.error, null);
+    const plan = actions.getPlan();
+    assert.equal(plan.settled, true);
+    assert.deepEqual(actions.getHistory(), []);
+    // Reis: 200 g less than bought, so at home now. Hack: 300 g more, 100 g come from home, 200 g are to buy.
+    assert.deepEqual(open(shoppingList(plan), read('shop', {})), [
+      ['rinderhack', '200 g'],
+      ['nudeln', '400 g'],
+    ]);
+    assert.equal(read('shop', {}).reis, true, 'a line that is bought stays ticked');
+    const pantry = actions.getPantry().map(({ id, grams }) => [id, grams]);
+    assert.deepEqual(pantry, [['reis', 250]]);
+
+    // The shop is not booked again, and correcting the pantry does not open it.
+    assert.equal(actions.settleShopping(), false);
+    actions.changePantry([{ name: 'Olivenöl', grams: 500 }]);
+    assert.equal(actions.getPlan().settled, true);
+    assert.deepEqual(actions.getPlan().pantry, plan.pantry);
+    assert.deepEqual(
+      actions.getPantry().map(({ id, grams }) => [id, grams]),
+      [...pantry, ['olivenoel', 500]]
+    );
+  });
+
+  // Before the shop: the list follows the plan; a line in the cart that now needs more opens again.
+  const before = await midWeek({ settled: false });
+  await withApp([before.answer], async () => {
+    const { read, write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    const home = [{ id: 'reis', name: 'Reis', grams: 100, category: 'Vorrat', since: before.day(-4) }];
+    write('profile', before.person);
+    write('plan', { ...before.plan, pantry: home });
+    write('pantry', home);
+    write('shop', { rinderhack: true, reis: true });
+
+    await actions.replaceRecipe('b');
+    assert.equal(actions.planning.error, null);
+    const plan = actions.getPlan();
+    assert.ok(!plan.settled);
+    assert.deepEqual(actions.getPantry(), home, 'the shop is not done, so nothing comes home yet');
+    // Reis in the cart: 700 g bought for 800 g, now 600 g are needed. What is in the cart counts as at home.
+    assert.deepEqual(
+      plan.pantry.map(({ id, grams }) => [id, grams]),
+      [['reis', 800]]
+    );
+    assert.deepEqual(open(shoppingList(plan), read('shop', {})), [
+      ['rinderhack', '800 g'],
+      ['nudeln', '400 g'],
+    ]);
+    assert.equal(read('shop', {}).reis, true);
+
+    // The shop is done: the rice bought for the old dish is booked, not lost.
+    write('shop', { ...read('shop', {}), rinderhack: true, nudeln: true });
+    assert.equal(actions.settleShopping(), true);
+    assert.deepEqual(
+      actions.getPantry().map(({ id, grams }) => [id, grams]),
+      [['reis', 200]]
+    );
+  });
+
+  // Two swaps after the shop: a rest the first swap put on the list and that was not bought is no food at home.
+  const twice = await midWeek();
+  const salad = {
+    ...twice.answer,
+    recipes: [
+      {
+        ...twice.answer.recipes[0],
+        id: 'e',
+        name: 'Salat',
+        ingredients: [twice.answer.recipes[0].ingredients[0]],
+      },
+    ],
+    assignments: twice.answer.assignments.map((entry) => ({ ...entry, recipeId: 'e' })),
+    cookDays: [{ ...twice.answer.cookDays[0], steps: [twice.step('e', 'Salat')] }],
+  };
+  await withApp([twice.answer, salad], async () => {
+    const { read, write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    write('profile', twice.person);
+    write('plan', twice.plan);
+    write('pantry', [
+      { id: 'rinderhack', name: 'Hack', grams: 100, category: 'Vorrat', since: twice.day(-4) },
+    ]);
+    write('shop', { rinderhack: true, reis: true });
+
+    await actions.replaceRecipe('b');
+    assert.deepEqual(open(shoppingList(actions.getPlan()), read('shop', {}))[0], ['rinderhack', '200 g']);
+    await actions.replaceRecipe('c');
+    assert.equal(actions.planning.error, null);
+    // Of the Hack only the 100 g taken from home come back; the 200 g on the list were never bought.
+    assert.deepEqual(actions.getPantry().find((entry) => entry.id === 'rinderhack')?.grams, 100);
+  });
+});
+
+test('swapping a dish keeps the steps of the other dishes of its cook day', async () => {
+  const { plan, answer, person, day, step } = await midWeek();
+  const bowl = { ...plan.recipes[1], id: 'd', name: 'Bowl', portions: 1 };
+  const shared = {
+    ...plan,
+    recipes: [...plan.recipes, bowl],
+    meals: plan.meals.map((meal) => (meal.id === '6-Abendessen' ? { ...meal, recipeId: 'd' } : meal)),
+    cookDays: [
+      plan.cookDays[0],
+      {
+        ...plan.cookDays[1],
+        equipment: ['Pfanne', 'Schüssel'],
+        steps: [
+          { ...step('b', 'Curry'), id: 's1' },
+          { ...step('d', 'Bowl'), id: 's2' },
+        ],
+      },
+    ],
+  };
+  // Claude echoes the done day from the old plan first and leaves the Bowl out of the swap day.
+  const echoed = {
+    ...answer,
+    assignments: answer.assignments.slice(0, 3),
+    cookDays: [{ ...plan.cookDays[0], steps: [step('a', 'Chili')] }, ...answer.cookDays],
+  };
+  await withApp([echoed], async () => {
+    const { write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    write('profile', person);
+    write('plan', shared);
+    await actions.replaceRecipe('b');
+    assert.equal(actions.planning.error, null);
+    const after = actions.getPlan();
+    assert.deepEqual(after.cookDays[0], shared.cookDays[0]);
+    const swapDay = after.cookDays[1];
+    assert.equal(swapDay.date, day(1));
+    assert.deepEqual(
+      swapDay.steps.map((entry) => [entry.recipeId, entry.title]),
+      [
+        ['c', 'Pasta'],
+        ['d', 'Bowl'],
+      ]
+    );
+    assert.equal(new Set(swapDay.steps.map((entry) => entry.id)).size, 2, 'every step keeps its own id');
+    assert.deepEqual(swapDay.equipment, ['Großer Topf', 'Pfanne', 'Schüssel']);
+    assert.equal(swapDay.minutes, 50);
+  });
+});
+
+test('a swapped dish is only left out of this plan, and the assistant is told so', async () => {
+  const { plan, answer, person } = await midWeek();
+  await withApp([answer], async (sent) => {
+    const { write } = await import('../src/store.js');
+    const actions = await import('../src/actions.js');
+    const { TOOLS, runTool } = await import('../src/agentTools.js');
+    write('profile', person);
+    write('plan', plan);
+    write('taste', { never: ['Fisch'] });
+    const tool = TOOLS.find((entry) => entry.name === 'replace_dish');
+    assert.doesNotMatch(tool.description, /Nie wieder/);
+    assert.match(tool.description, /nur in diesem Plan/);
+
+    const result = await runTool('replace_dish', { recipeId: 'b' });
+    assert.equal(result.done, true);
+    assert.match(result.note, /nur in diesem Plan/);
+    assert.match(
+      sent[0].messages[0].content,
+      /Nie wieder: Fisch, Curry\./,
+      'Claude leaves it out of this plan'
+    );
+    assert.deepEqual(actions.getTaste(), { never: ['Fisch'] }, 'nothing is kept for later plans');
+  });
+});
+
 test('one shop a week: last shop day before cooking, with fillers, staples and supplements', () => {
   assert.equal(shopDate({ shopWeekday: 6 }, START), '2026-11-07');
   assert.equal(shopDate({ shopWeekday: 0 }, START), START, 'on the cook day itself');
