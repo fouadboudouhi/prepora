@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { kept } from '../src/agent.js';
+import { changePantry, getPantry, getPlan, planShape, savePlan, settleShopping } from '../src/actions.js';
 import { finishCookDay, handyAmount, nextOpen, readySession, sortedTimers } from '../src/cookDay.js';
 import { entryFromProduct, lookupProduct, productFrom, validCode } from '../src/barcode.js';
 import { calendarText } from '../src/calendar.js';
@@ -16,6 +17,7 @@ import {
   buildSlots,
   cookDates,
   freshCookDays,
+  FRIDGE_DAYS,
   finishPlan,
   nextStart,
   placeStock,
@@ -349,6 +351,42 @@ test('what is at home comes off the list, and what the packs leave goes into the
   );
   assert.equal(shoppingCost(plan), 0);
 });
+
+// A storage of its own for one test, so the parts that remember things run as they do in the browser.
+async function withStorage(run) {
+  const kept = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => (kept.has(key) ? kept.get(key) : null),
+    setItem: (key, value) => kept.set(key, String(value)),
+    removeItem: (key) => kept.delete(key),
+  };
+  try {
+    await run();
+  } finally {
+    delete globalThis.localStorage;
+  }
+}
+
+test('a shop taken as bought by cooking stays bought when the pantry changes, nothing comes in twice', () =>
+  withStorage(() => {
+    const plan = {
+      id: 'p',
+      shopOn: '2026-11-07',
+      recipes: [{ name: 'A', ingredients: [food('Hack', 'rinderhack', 700, 500, 'Fleisch und Fisch')] }],
+      meals: [],
+      cookDays: [],
+      pantry: [],
+    };
+    savePlan(plan);
+    assert.equal(settleShopping('2026-11-08', { cooking: true }), true);
+    const grams = () => getPantry('2026-11-08').find((entry) => entry.id === 'rinderhack')?.grams;
+    assert.equal(grams(), 300);
+    changePantry([{ name: 'Olivenöl', grams: 500 }], '2026-11-08');
+    assert.equal(getPlan().settled, true);
+    assert.deepEqual(getPlan().pantry, []);
+    assert.equal(settleShopping('2026-11-08', { cooking: true }), false);
+    assert.equal(grams(), 300);
+  }));
 
 test('freezer portions take the last meals of the week', () => {
   const slots = buildSlots(profile, START);
@@ -1203,6 +1241,58 @@ test('cook days spread over a plan of any length, and without a freezer there ar
   assert.equal(freshCookDays({ freezer: true }, 10, 1), 1);
 });
 
+// Every eating day has a cook day before it that is at most as old as the fridge allows.
+const keepsFresh = (dates, start, days) =>
+  Array.from({ length: days }, (_, index) => Date.parse(`${start}T00:00:00Z`) / 864e5 + index + 1).every(
+    (day) =>
+      dates.some((date) => {
+        const age = day - Date.parse(`${date}T00:00:00Z`) / 864e5;
+        return age >= 0 && age <= FRIDGE_DAYS;
+      })
+  );
+
+test('without a freezer every cook weekday makes a plan that keeps, a second weekday only when it was chosen', () => {
+  const today = '2026-11-16';
+  for (let cookWeekday = 0; cookWeekday < 7; cookWeekday += 1)
+    for (let cookWeekday2 = 0; cookWeekday2 < 7; cookWeekday2 += 1)
+      for (const cookDays of [1, 2]) {
+        const profile = { cookWeekday, cookWeekday2, cookDays, eatDays: 7, freezer: false };
+        const shape = planShape({}, profile, today);
+        const dates = cookDates(shape.profile, shape.start);
+        assert.ok(keepsFresh(dates, shape.start, 7), `${cookWeekday}/${cookWeekday2}/${cookDays}: ${dates}`);
+      }
+  // Thursday with one cook day chosen: the second is spread, not the Wednesday the profile never asked for.
+  const thursday = planShape({}, { cookWeekday: 4, cookWeekday2: 3, cookDays: 1, freezer: false }, today);
+  assert.deepEqual(cookDates(thursday.profile, thursday.start), ['2026-11-19', '2026-11-23']);
+  const sunday = planShape({}, { cookWeekday: 0, cookWeekday2: 3, cookDays: 1, freezer: false }, today);
+  assert.deepEqual(cookDates(sunday.profile, sunday.start), ['2026-11-22', '2026-11-26']);
+  // Two chosen, and the chosen weekday keeps: it stays.
+  const chosen = planShape({}, { cookWeekday: 0, cookWeekday2: 3, cookDays: 2, freezer: false }, today);
+  assert.deepEqual(cookDates(chosen.profile, chosen.start), ['2026-11-22', '2026-11-25']);
+});
+
+test('"Neu planen" keeps the chosen second weekday unless days or cook days were changed there', () => {
+  const today = '2026-11-16';
+  const profile = { cookDays: 2, cookWeekday: 6, cookWeekday2: 1, eatDays: 7 };
+  const dates = (options) => {
+    const shape = planShape(options, profile, today);
+    return cookDates(shape.profile, shape.start);
+  };
+  assert.deepEqual(dates({}), ['2026-11-21', '2026-11-23']);
+  assert.deepEqual(dates({ days: 7, cookDays: 2 }), ['2026-11-21', '2026-11-23']);
+  // A start on another weekday spreads: the second weekday only fits a start on the first.
+  assert.deepEqual(dates({ days: 7, cookDays: 2, start: 'tomorrow' }), ['2026-11-17', '2026-11-21']);
+  assert.deepEqual(dates({ days: 7, cookDays: 2, start: 'today' }), ['2026-11-16', '2026-11-20']);
+  assert.deepEqual(dates({ days: 7, cookDays: 2, start: '2026-11-28' }), ['2026-11-28', '2026-11-30']);
+  for (const today of ['2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-22']) {
+    const shape = planShape({ start: 'today' }, { ...profile, freezer: true }, today);
+    const [first, second] = cookDates(shape.profile, shape.start);
+    assert.equal((Date.parse(second) - Date.parse(first)) / 864e5, 4, today);
+  }
+  assert.deepEqual(dates({ days: 6, cookDays: 2 }), ['2026-11-21', '2026-11-24']);
+  assert.deepEqual(dates({ days: 7, cookDays: 3 }), ['2026-11-21', '2026-11-23', '2026-11-26']);
+});
+
 test('while a plan runs its own cook and shop days remind, not the weekdays', () => {
   const at = new Date('2026-11-03T08:00:00').getTime();
   const plan = {
@@ -1218,6 +1308,23 @@ test('while a plan runs its own cook and shop days remind, not the weekdays', ()
   );
   assert.ok(!ids.includes('cook-2026-11-08') && !ids.includes('shop-2026-11-07'));
   assert.ok(ids.includes('cook-2026-11-15'));
+});
+
+test('a second cook day keeps its own time once the first is done', () => {
+  const at = new Date('2026-11-05T08:00:00').getTime();
+  const plan = {
+    start: '2026-11-04',
+    shopOn: '2026-11-03',
+    cookDays: [{ date: '2026-11-04', done: true }, { date: '2026-11-07' }],
+    meals: [{ date: '2026-11-05' }, { date: '2026-11-10' }],
+  };
+  const alarms = blockAlarms({ cookWeekday: 3, cookTime: '10:00', cookTime2: '18:00' }, at, plan);
+  const second = alarms.find((alarm) => alarm.id === 'cook-2026-11-07');
+  assert.equal(second.at, new Date('2026-11-07T18:00:00').getTime());
+  assert.equal(
+    alarms.some((alarm) => alarm.id === 'cook-2026-11-04'),
+    false
+  );
 });
 
 test('fixed times become reminders for the coming weeks, at the chosen time', () => {

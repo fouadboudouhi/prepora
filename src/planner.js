@@ -36,13 +36,15 @@ export function buildSlots(profile, start) {
 }
 
 // Cook days: the first on the start day, more spread evenly over the eating days. Two with a fixed weekday from the
-// profile keep that weekday, as long as it falls inside the plan.
+// profile keep that weekday, as long as it falls inside the plan and, without a freezer, nothing waits too long for it.
 export function cookDates(profile, start) {
   const days = profile.eatDays ?? 7;
   const count = Math.min(Math.max(Math.round(profile.cookDays ?? 1), 1), MAX_COOK_DAYS, days);
   if (count === 2 && profile.cookWeekday2 !== undefined && profile.cookWeekday2 !== null) {
     const second = secondCookDay(profile, start);
-    if (dayNumber(second) - dayNumber(start) <= days) return [start, second];
+    const gap = dayNumber(second) - dayNumber(start);
+    const keeps = profile.freezer !== false || (gap <= FRIDGE_DAYS + 1 && days - gap <= FRIDGE_DAYS);
+    if (gap <= days && keeps) return [start, second];
   }
   return [
     ...new Set(

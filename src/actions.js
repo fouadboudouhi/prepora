@@ -96,12 +96,11 @@ export function changePantry(changes = [], today = localDay()) {
     else list.push(entry);
   }
   savePantry(list);
-  // Until the shop is really done, what is at home is what the list takes off. A plan that was taken as bought
-  // too early opens again; one whose dish was swapped after the shop stays bought, its new lines are a second shop.
+  // Until the shop is really done, what is at home is what the list takes off. Once it is booked into the pantry it
+  // stays booked: opening it again here would book the same leftovers a second time.
   const plan = getPlan();
-  if (plan && (!plan.settled || (!shopDone(plan) && !plan.swappedAfterShop))) {
-    const { settled, ...rest } = plan;
-    const next = { ...rest, pantry: list };
+  if (plan && !plan.settled) {
+    const next = { ...plan, pantry: list };
     savePlan({ ...next, cost: shoppingCost(next) });
   }
   return list;
@@ -287,8 +286,13 @@ export function planShape(options = {}, profile = getProfile(), today = localDay
     options.start <= addDaysTo(today, 14)
   )
     start = options.start;
-  const fixed = options.start !== undefined || options.cookDays !== undefined;
-  const shaped = { ...profile, eatDays: days, cookDays, ...(fixed ? { cookWeekday2: null } : {}) };
+  // The second weekday from the profile counts only for the two cook days chosen there. A second day that freshness
+  // adds, other days or cook days asked for here, or a start on another weekday are spread over the plan instead.
+  // It only fits a start on the first cook weekday: from another day the gap to it could be anything.
+  const onWeekday = new Date(`${start}T00:00:00Z`).getUTCDay() === (profile.cookWeekday ?? 0);
+  const chosen =
+    cookDays === 2 && wanted === 2 && profile.cookDays === 2 && days === (profile.eatDays ?? 7) && onWeekday;
+  const shaped = { ...profile, eatDays: days, cookDays, ...(chosen ? {} : { cookWeekday2: null }) };
   const regular = shopDate(profile, start);
   const shopOn = regular < today ? today : regular;
   const note =
