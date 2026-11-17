@@ -78,6 +78,9 @@ export function addPantry(form) {
   const grams = Number(data.get('grams'));
   if (!name || !(grams > 0)) return;
   changePantry([{ name, grams, category: String(data.get('place') ?? 'Vorrat'), rename: true }]);
+  // Return keeps the field focused, and a focused field holds the redraw back: let go so the entry shows at once.
+  form.reset();
+  document.activeElement?.blur?.();
   rerender();
 }
 
@@ -87,6 +90,8 @@ export function addFridgeItem(form) {
     .slice(0, 80);
   if (!item) return;
   saveFridge([...getFridge().filter((entry) => entry !== item), item].slice(0, 30));
+  form.reset();
+  document.activeElement?.blur?.();
   rerender();
 }
 

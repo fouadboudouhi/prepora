@@ -29,6 +29,7 @@ const ERRORS = {
   interrupted: 'Die App wurde geschlossen, bevor die Antwort kam. Deine Nachricht steht wieder im Feld.',
   nofood: 'Darin habe ich nichts zu essen gefunden. Schreib es etwas genauer.',
   stale: 'Das geht nicht mehr zurück, weil sich seitdem etwas geändert hat.',
+  changed: 'Der Plan hat sich geändert, während Claude geplant hat. Das Gericht bleibt, wie es war.',
   aborted: 'Angehalten.',
 };
 export const errorText = (err) => {

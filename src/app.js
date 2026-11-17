@@ -241,14 +241,19 @@ function paint() {
   showTargets();
 }
 
-// A redraw from the background must not throw away what is being typed, nor jump to the top of the page.
+// A redraw from the background must not throw away what is being typed, nor jump to the top of the page. One held
+// back that way is not dropped: it comes once the field is left.
+let heldBack = false;
 function redrawKeepingPlace() {
   if (
     document.activeElement?.matches?.(
       'input[type="text"], input[type="number"], input[type="time"], textarea'
     )
-  )
+  ) {
+    heldBack = true;
     return;
+  }
+  heldBack = false;
   const top = window.scrollY;
   draw();
   window.scrollTo(0, top);
@@ -421,6 +426,33 @@ const FORMS = {
   },
   cookAsk,
 };
+
+// Focus leaves a field on the press of a tap, so the held-back redraw waits for its click: redrawn earlier, the button
+// under the finger would be gone. It waits on while focus is in another field, as from name to amount, so a half-filled
+// form is not wiped, and after a tap on a fold, which a redraw would close again; the next field left brings it.
+app.addEventListener('focusout', () => {
+  if (!heldBack) return;
+  let done = false;
+  const catchUp = (fold = false) => {
+    if (done) return;
+    done = true;
+    document.removeEventListener('click', afterClick, true);
+    if (heldBack && !fold && !document.activeElement?.matches?.('input, select, textarea')) {
+      // Text typed into a form but not sent yet survives the redraw.
+      const typed = [...app.querySelectorAll('form[id] input[type="text"], form[id] textarea')]
+        .filter((field) => field.name && field.value)
+        .map((field) => [field.form.id, field.name, field.value]);
+      redrawKeepingPlace();
+      for (const [form, name, value] of typed) {
+        const field = document.getElementById(form)?.elements?.namedItem(name);
+        if (field && 'value' in field && !field.value) field.value = value;
+      }
+    }
+  };
+  const afterClick = (event) => setTimeout(() => catchUp(Boolean(event.target.closest?.('summary'))));
+  document.addEventListener('click', afterClick, true);
+  setTimeout(catchUp, 400);
+});
 
 app.addEventListener('submit', (event) => {
   const handler = FORMS[event.target.id];
